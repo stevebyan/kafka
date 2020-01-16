@@ -1,0 +1,89 @@
+package org.apache.kafka.clients;
+
+import com.ibm.disni.verbs.IbvSendWR;
+import com.ibm.disni.verbs.IbvSendWR.Rdma;
+import com.ibm.disni.verbs.IbvSge;
+import org.apache.kafka.clients.producer.internals.ProducerBatch;
+import org.apache.kafka.common.record.MemoryRecords;
+
+import java.nio.ByteBuffer;
+import java.util.LinkedList;
+
+
+public class ProduceRDMAWriteRequest implements RDMAWrBuilder {
+
+    private long remoteAddress;
+    private int rkey;
+    private int length;
+
+    private ByteBuffer targetBuffer;
+    private int lkey;
+    private int immdata;
+
+    private final ProducerBatch batch;
+    public final long baseOffset;
+
+    public ProduceRDMAWriteRequest( ProducerBatch batch, long baseOffset, long remoteAddress, int rkey,  int lkey, int immdata){
+        this.batch = batch;
+        this.remoteAddress = remoteAddress;
+        this.rkey = rkey;
+        this.length = batch.records().sizeInBytes();
+        this.targetBuffer = batch.records().buffer();
+        this.lkey = lkey;
+        this.immdata = immdata;
+        this.baseOffset = baseOffset;
+    }
+
+    public ProduceRDMAWriteRequest(long remoteAddress, int rkey, int length, ByteBuffer targetBuffer, int lkey, int immdata){
+        this.batch = null;
+        this.remoteAddress = remoteAddress;
+        this.rkey = rkey;
+        this.length = length;
+        this.targetBuffer = targetBuffer;
+        this.lkey = lkey;
+        this.immdata = immdata;
+        this.baseOffset = 0;
+    }
+
+    public ProducerBatch getBatch(){
+        return batch;
+    }
+
+    public void updateBuffer(MemoryRecords records){
+        this.targetBuffer = records.buffer();
+        this.length = records.sizeInBytes();
+    }
+
+    @Override
+    public LinkedList<IbvSendWR> build() {
+        LinkedList<IbvSendWR> wrs = new LinkedList<>();
+
+        IbvSge sgeSend = new IbvSge();
+        sgeSend.setAddr(((sun.nio.ch.DirectBuffer) targetBuffer).address());
+        sgeSend.setLength(length);
+        sgeSend.setLkey(lkey);
+        LinkedList<IbvSge> sgeList = new LinkedList<>();
+        sgeList.add(sgeSend);
+
+
+        IbvSendWR sendWR = new IbvSendWR( );
+        //sendWR.setWr_id(1002);
+        sendWR.setSg_list(sgeList);
+        sendWR.setOpcode(IbvSendWR.IBV_WR_RDMA_WRITE_WITH_IMM);
+        sendWR.setSend_flags(IbvSendWR.IBV_SEND_SIGNALED);
+        sendWR.setImm_data(immdata);
+
+        Rdma rdmapart = sendWR.getRdma();
+        rdmapart.setRemote_addr(remoteAddress);
+        rdmapart.setRkey(rkey);
+
+        wrs.add(sendWR);
+
+        return wrs;
+    }
+
+    @Override
+    public ByteBuffer getTargetBuffer() {
+        return targetBuffer;
+    }
+}

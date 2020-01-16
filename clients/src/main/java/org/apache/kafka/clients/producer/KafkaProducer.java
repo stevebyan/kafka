@@ -29,22 +29,13 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import org.apache.kafka.clients.ApiVersions;
-import org.apache.kafka.clients.ClientDnsLookup;
-import org.apache.kafka.clients.ClientUtils;
-import org.apache.kafka.clients.KafkaClient;
-import org.apache.kafka.clients.Metadata;
-import org.apache.kafka.clients.NetworkClient;
+
+import org.apache.kafka.clients.*;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetCommitCallback;
-import org.apache.kafka.clients.producer.internals.BufferPool;
-import org.apache.kafka.clients.producer.internals.ProducerInterceptors;
-import org.apache.kafka.clients.producer.internals.ProducerMetrics;
-import org.apache.kafka.clients.producer.internals.RecordAccumulator;
-import org.apache.kafka.clients.producer.internals.Sender;
-import org.apache.kafka.clients.producer.internals.TransactionManager;
-import org.apache.kafka.clients.producer.internals.TransactionalRequestResult;
+import org.apache.kafka.clients.consumer.internals.ConsumerRDMAClient;
+import org.apache.kafka.clients.producer.internals.*;
 import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Metric;
@@ -393,6 +384,22 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             this.transactionManager = configureTransactionState(config, logContext, log);
             int deliveryTimeoutMs = configureDeliveryTimeout(config, log);
 
+
+            int maxSendSize =config.getInt(ProducerConfig.RDMA_SEND_SIZE);
+            int maxReceiveSize = config.getInt(ProducerConfig.RDMA_RECV_SIZE);
+            int requestQuota =config.getInt(ProducerConfig.RDMA_QUOTA_SIZE);
+            int compeltionQueueSize =config.getInt(ProducerConfig.RDMA_QUEUE_SIZE);
+            int wcBatch = config.getInt(ProducerConfig.WC_BATCH);
+            int contentedLimit = config.getInt(ProducerConfig.RDMA_CONTENTION_LIMIT);
+            long tcpTimeout = config.getLong(ProducerConfig.TCP_TIMEOUT);
+            int cacheSize = config.getInt(ProducerConfig.RDMA_CACHE_SIZE);
+
+
+            RdmaClient rdmaNetwork = new ExclusiveRdmaClient(clientId,logContext,new RdmaClient.RDMAQPparams(maxSendSize,maxReceiveSize),
+                    requestQuota,compeltionQueueSize,wcBatch,contentedLimit);
+//
+            RdmaBufferPool rdmapool = new RdmaBufferPool(cacheSize, time, rdmaNetwork,tcpTimeout);
+
             this.apiVersions = new ApiVersions();
             this.accumulator = new RecordAccumulator(logContext,
                     config.getInt(ProducerConfig.BATCH_SIZE_CONFIG),
@@ -405,7 +412,9 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                     time,
                     apiVersions,
                     transactionManager,
-                    new BufferPool(this.totalMemorySize, config.getInt(ProducerConfig.BATCH_SIZE_CONFIG), metrics, time, PRODUCER_METRIC_GROUP_NAME));
+                    new BufferPool(this.totalMemorySize, config.getInt(ProducerConfig.BATCH_SIZE_CONFIG), metrics, time, PRODUCER_METRIC_GROUP_NAME),
+                    rdmapool
+            );
             List<InetSocketAddress> addresses = ClientUtils.parseAndValidateAddresses(
                     config.getList(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG),
                     config.getString(ProducerConfig.CLIENT_DNS_LOOKUP_CONFIG));
@@ -417,7 +426,9 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                 this.metadata.bootstrap(addresses, time.milliseconds());
             }
             this.errors = this.metrics.sensor("errors");
-            this.sender = newSender(logContext, kafkaClient, this.metadata);
+
+
+            this.sender = newSender(logContext, kafkaClient, this.metadata, rdmaNetwork);
             String ioThreadName = NETWORK_THREAD_PREFIX + " | " + clientId;
             this.ioThread = new KafkaThread(ioThreadName, this.sender, true);
             this.ioThread.start();
@@ -432,8 +443,11 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         }
     }
 
+    Sender newSender(LogContext logContext, KafkaClient kafkaClient, Metadata metadata ) {
+        return  newSender(logContext, kafkaClient, metadata,null );
+    }
     // visible for testing
-    Sender newSender(LogContext logContext, KafkaClient kafkaClient, Metadata metadata) {
+    Sender newSender(LogContext logContext, KafkaClient kafkaClient, Metadata metadata,RdmaClient rdmaClient) {
         int maxInflightRequests = configureInflightRequests(producerConfig, transactionManager != null);
         int requestTimeoutMs = producerConfig.getInt(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG);
         ChannelBuilder channelBuilder = ClientUtils.createChannelBuilder(producerConfig, time);
@@ -471,7 +485,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                 requestTimeoutMs,
                 producerConfig.getLong(ProducerConfig.RETRY_BACKOFF_MS_CONFIG),
                 this.transactionManager,
-                apiVersions);
+                apiVersions,rdmaClient);
     }
 
     private static int lingerMs(ProducerConfig config) {
@@ -843,7 +857,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     public Future<RecordMetadata> send(ProducerRecord<K, V> record, Callback callback) {
         // intercept the record, which can be potentially modified; this method does not throw exceptions
         ProducerRecord<K, V> interceptedRecord = this.interceptors.onSend(record);
-        return doSend(interceptedRecord, callback);
+        return doSend(interceptedRecord, callback, false);
     }
 
     // Verify that this producer instance has not been closed. This method throws IllegalStateException if the producer
@@ -853,10 +867,22 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             throw new IllegalStateException("Cannot perform operation after producer has been closed");
     }
 
+
+    public Future<RecordMetadata> RDMAsend(ProducerRecord<K, V> record) {
+        return RDMAsend(record, null);
+    }
+
+    public Future<RecordMetadata> RDMAsend(ProducerRecord<K, V> record, Callback callback) {
+        // intercept the record, which can be potentially modified; this method does not throw exceptions
+        ProducerRecord<K, V> interceptedRecord = this.interceptors.onSend(record);
+        return doSend(interceptedRecord, callback, true);
+    }
+
+
     /**
      * Implementation of asynchronously send a record to a topic.
      */
-    private Future<RecordMetadata> doSend(ProducerRecord<K, V> record, Callback callback) {
+    private Future<RecordMetadata> doSend(ProducerRecord<K, V> record, Callback callback, boolean withRdma) {
         TopicPartition tp = null;
         try {
             throwIfProducerClosed();
@@ -904,8 +930,13 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             if (transactionManager != null && transactionManager.isTransactional())
                 transactionManager.maybeAddPartitionToTransaction(tp);
 
-            RecordAccumulator.RecordAppendResult result = accumulator.append(tp, timestamp, serializedKey,
-                    serializedValue, headers, interceptCallback, remainingWaitMs);
+            RecordAccumulator.RecordAppendResult result = (withRdma) ?   accumulator.RDMAappend(tp, timestamp, serializedKey,
+                                                                         serializedValue, headers, interceptCallback, remainingWaitMs)
+                                                                        : accumulator.append(tp, timestamp, serializedKey,
+                                                                        serializedValue, headers, interceptCallback, remainingWaitMs);
+
+
+
             if (result.batchIsFull || result.newBatchCreated) {
                 log.trace("Waking up the sender since topic {} partition {} is either full or getting a new batch", record.topic(), partition);
                 this.sender.wakeup();

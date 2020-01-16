@@ -1,0 +1,147 @@
+package org.apache.kafka.clients;
+
+import com.ibm.disni.verbs.*;
+
+
+import java.util.LinkedList;
+import java.util.List;
+
+public class VerbsEP {
+
+    private final RdmaCmId id;
+    private final IbvQP qp;
+    private final IbvCQ sendcq;
+    private final IbvCQ recvcq;
+
+    private int CanPostSends;
+    private volatile Integer CanPostSendSignaled;
+    private volatile Integer CanPostReceives;
+
+
+    private LinkedList<IbvSendWR> wrList_send = new LinkedList<IbvSendWR>();
+
+
+    private int signaledcounter = 1;
+    private LinkedList<Integer> signaledafter = new LinkedList<>();
+
+    IbvWC[] sendwcList = new IbvWC[8];
+    IbvWC[] recvwcList = new IbvWC[8];
+    SVCPollCq sendpoll = null;
+    SVCPollCq recvpoll = null;
+
+    SVCPostRecv emptyrecv = null;
+
+    VerbsEP(RdmaCmId id, IbvQP qp,IbvCQ sendcq,IbvCQ recvcq,
+             int CanPostSends, Integer CanPostSendSignaled, Integer CanPostReceives){
+        this.id = id;
+        this.qp = qp;
+        this.sendcq = sendcq;
+        this.recvcq = recvcq;
+        this.CanPostSends = CanPostSends;
+        this.CanPostSendSignaled = CanPostSendSignaled;
+        this.CanPostReceives = CanPostReceives;
+
+        for (int i = 0; i < sendwcList.length; i++){
+            sendwcList[i] = new IbvWC();
+        }
+        for (int i = 0; i < recvwcList.length; i++){
+            recvwcList[i] = new IbvWC();
+        }
+
+
+
+    }
+
+    public boolean ready() { return true; }
+
+    public int getQPnum() throws Exception { return qp.getQp_num(); }
+
+    public void postsend(IbvSendWR wr, boolean dosend) throws Exception{
+
+        wrList_send.add(wr);
+
+        if (CanPostSends == 0){
+            return;
+        }
+
+        if(dosend) {
+            trigger_send();
+        }
+    }
+
+    private void trigger_send() throws Exception{
+        LinkedList<IbvSendWR> wrList_tosend =  new LinkedList<IbvSendWR>();
+
+        while(!wrList_send.isEmpty() && CanPostSends > 0 ){
+            if( wrList_send.getFirst().getSend_flags() == IbvSendWR.IBV_SEND_SIGNALED || signaledcounter > 10){
+                if(CanPostSendSignaled > 0){
+                    wrList_send.getFirst().setSend_flags(IbvSendWR.IBV_SEND_SIGNALED);
+                    CanPostSendSignaled--;
+                    signaledafter.add(signaledcounter);
+                    signaledcounter = 0;
+                } else {
+                    break;
+                }
+            }
+
+            wrList_tosend.add( wrList_send.pollFirst() );
+
+            signaledcounter++;
+            CanPostSends--;
+        }
+
+        if(wrList_tosend.isEmpty()){
+            return;
+        }
+
+        qp.postSend(wrList_tosend,null).execute().free();
+    }
+
+
+    public void postEmptyRecv() throws Exception{
+        if(emptyrecv == null){
+            IbvRecvWR wr = new IbvRecvWR();
+            List<IbvRecvWR>  list_wr = new LinkedList<>();
+            list_wr.add(wr);
+            emptyrecv = qp.postRecv(list_wr, null);
+        }
+
+        emptyrecv.execute();
+    }
+
+    /*
+        We use stateful poll request to reduce overhead of polling.
+        Warning! IbvWC must be processed before polling again!
+
+     */
+    public LinkedList<IbvWC> pollsend( ) throws Exception{
+        if(this.sendpoll == null) {
+            this.sendpoll = sendcq.poll(sendwcList, sendwcList.length);
+        }
+        LinkedList<IbvWC> recvList =  new LinkedList<>();
+        int compl = this.sendpoll.execute().getPolls();
+        for(int i= 0; i < compl; i++){
+            recvList.add(sendwcList[i]);
+            CanPostSends += signaledafter.pollFirst();
+            CanPostSendSignaled++;
+        }
+
+        if(compl!=0) {
+            trigger_send();
+        }
+
+        return recvList;
+    }
+
+    public LinkedList<IbvWC> pollrecv( ) throws Exception{
+        if(this.recvpoll == null) {
+            this.recvpoll = recvcq.poll(recvwcList, sendwcList.length);
+        }
+        LinkedList<IbvWC> recvList =  new LinkedList<>();
+        int compl = this.recvpoll.execute().getPolls();
+        for(int i = 0; i < compl; i++){
+            recvList.add(recvwcList[i]);
+        }
+        return recvList;
+    }
+}
