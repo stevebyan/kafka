@@ -16,7 +16,7 @@
  */
 package org.apache.kafka.clients;
 
-import com.ibm.disni.verbs.*;
+import com.ibm.disni.verbs.IbvSendWR;
 
 import java.util.LinkedList;
 import java.nio.ByteBuffer;

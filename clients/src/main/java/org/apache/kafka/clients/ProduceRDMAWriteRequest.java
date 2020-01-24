@@ -39,7 +39,7 @@ public class ProduceRDMAWriteRequest implements RDMAWrBuilder {
     private final ProducerBatch batch;
     public final long baseOffset;
 
-    public ProduceRDMAWriteRequest( ProducerBatch batch, long baseOffset, long remoteAddress, int rkey,  int lkey, int immdata){
+    public ProduceRDMAWriteRequest(ProducerBatch batch, long baseOffset, long remoteAddress, int rkey,  int lkey, int immdata) {
         this.batch = batch;
         this.remoteAddress = remoteAddress;
         this.rkey = rkey;
@@ -50,7 +50,7 @@ public class ProduceRDMAWriteRequest implements RDMAWrBuilder {
         this.baseOffset = baseOffset;
     }
 
-    public ProduceRDMAWriteRequest(long remoteAddress, int rkey, int length, ByteBuffer targetBuffer, int lkey, int immdata){
+    public ProduceRDMAWriteRequest(long remoteAddress, int rkey, int length, ByteBuffer targetBuffer, int lkey, int immdata) {
         this.batch = null;
         this.remoteAddress = remoteAddress;
         this.rkey = rkey;
@@ -61,11 +61,11 @@ public class ProduceRDMAWriteRequest implements RDMAWrBuilder {
         this.baseOffset = 0;
     }
 
-    public ProducerBatch getBatch(){
+    public ProducerBatch getBatch() {
         return batch;
     }
 
-    public void updateBuffer(MemoryRecords records){
+    public void updateBuffer(MemoryRecords records) {
         this.targetBuffer = records.buffer();
         this.length = records.sizeInBytes();
     }
@@ -82,7 +82,7 @@ public class ProduceRDMAWriteRequest implements RDMAWrBuilder {
         sgeList.add(sgeSend);
 
 
-        IbvSendWR sendWR = new IbvSendWR( );
+        IbvSendWR sendWR = new IbvSendWR();
         //sendWR.setWr_id(1002);
         sendWR.setSg_list(sgeList);
         sendWR.setOpcode(IbvSendWR.IBV_WR_RDMA_WRITE_WITH_IMM);

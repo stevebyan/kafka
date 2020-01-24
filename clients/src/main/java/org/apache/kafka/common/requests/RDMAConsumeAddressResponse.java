@@ -23,13 +23,18 @@ import org.apache.kafka.common.protocol.types.Field;
 import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.utils.CollectionUtils;
-import org.apache.kafka.common.utils.Utils;
 
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
 
-import static org.apache.kafka.common.protocol.CommonFields.*;
-import static org.apache.kafka.common.protocol.types.Type.INT64;
+import static org.apache.kafka.common.protocol.CommonFields.PARTITION_ID;
+import static org.apache.kafka.common.protocol.CommonFields.ERROR_CODE;
+import static org.apache.kafka.common.protocol.CommonFields.TOPIC_NAME;
+import static org.apache.kafka.common.protocol.CommonFields.HOST;
+import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 
 /**
  * Possible error codes:
@@ -105,8 +110,8 @@ public class RDMAConsumeAddressResponse extends AbstractResponse {
             LAST_STABLE_POSITION,
             LAST_STABLE_OFFSET,
             WRITTEN_POSITION,
-            RKEY,IS_SEALED,
-            SLOTADDRESS,SLOTRKEY );
+            RKEY, IS_SEALED,
+            SLOTADDRESS, SLOTRKEY);
 
     private static final Field TOPICS_V0 = TOPICS.withFields(
             TOPIC_NAME,
@@ -144,9 +149,9 @@ public class RDMAConsumeAddressResponse extends AbstractResponse {
         /**
          * Constructor
          */
-        public PartitionData(Errors error, long address, long baseOffset, long position,long watermarkPosition, long watermarkOffset,
+        public PartitionData(Errors error, long address, long baseOffset, long position, long watermarkPosition, long watermarkOffset,
                              long lastStablePosition, long lastStableOffset,
-                            long writtenPosition,  int rkey, boolean fileIsSealed, long slotAddress, int slotRkey) {
+                             long writtenPosition,  int rkey, boolean fileIsSealed, long slotAddress, int slotRkey) {
             this.error = error;
             this.address = address;
             this.baseOffset = baseOffset;
@@ -189,7 +194,7 @@ public class RDMAConsumeAddressResponse extends AbstractResponse {
 
             bld.append(", address: ").append(address).
                     append(", baseOffset: ").append(baseOffset).
-                    append(", rkey: ").append(rkey) ;
+                    append(", rkey: ").append(rkey);
 
             bld.append(")");
             return bld.toString();
@@ -206,7 +211,7 @@ public class RDMAConsumeAddressResponse extends AbstractResponse {
      * Constructor for all versions without throttle time
      */
     public RDMAConsumeAddressResponse(String hostname, int rdmaport, Map<TopicPartition, PartitionData> responseData) {
-        this(hostname,rdmaport,DEFAULT_THROTTLE_TIME, responseData);
+        this(hostname, rdmaport, DEFAULT_THROTTLE_TIME, responseData);
     }
 
     public RDMAConsumeAddressResponse(String hostname, int rdmaport, int throttleTimeMs, Map<TopicPartition, PartitionData> responseData) {
@@ -247,8 +252,8 @@ public class RDMAConsumeAddressResponse extends AbstractResponse {
                 long slotAddress = partitionResponse.get(SLOTADDRESS);
                 int slotRkey = partitionResponse.get(SLOTRKEY);
 
-                partitionData = new PartitionData(error, address, baseOffset,position,watermarkPosition,watermarkOffset,
-                        lastStablePosition, lastStableOffset,writtenPosition,rkey,fileIsSealed,slotAddress,slotRkey);
+                partitionData = new PartitionData(error, address, baseOffset, position, watermarkPosition, watermarkOffset,
+                        lastStablePosition, lastStableOffset, writtenPosition, rkey, fileIsSealed, slotAddress, slotRkey);
 
                 responseData.put(new TopicPartition(topic, partition), partitionData);
             }
@@ -288,8 +293,8 @@ public class RDMAConsumeAddressResponse extends AbstractResponse {
     protected Struct toStruct(short version) {
         Struct struct = new Struct(ApiKeys.CONSUMER_RDMA_REGISTER.responseSchema(version));
         struct.setIfExists(THROTTLE_TIME_MS, throttleTimeMs);
-        struct.set(HOST,hostname);
-        struct.set(PORT,rdmaport);
+        struct.set(HOST, hostname);
+        struct.set(PORT, rdmaport);
 
         Map<String, Map<Integer, PartitionData>> topicsData = CollectionUtils.groupPartitionDataByTopic(responseData);
 

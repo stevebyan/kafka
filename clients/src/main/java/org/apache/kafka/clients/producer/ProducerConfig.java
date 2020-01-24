@@ -440,8 +440,8 @@ public class ProducerConfig extends AbstractConfig {
                                         TCP_TIMEOUT_DOC)
                                 .define(RDMA_CACHE_SIZE,
                                         Type.INT,
-                                        16*1024*1024, // 16 MiB
-                                        atLeast(1*1024), // 1 KiB
+                                        16 * 1024 * 1024, // 16 MiB
+                                        atLeast(1 * 1024), // 1 KiB
                                         Importance.LOW,
                                         RDMA_CACHE_SIZE_DOC);
     }

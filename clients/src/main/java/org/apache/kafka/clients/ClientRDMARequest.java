@@ -66,7 +66,9 @@ public final class ClientRDMARequest {
             ")";
     }
 
-    public ByteBuffer getBuffer() {return builder.getTargetBuffer(); }
+    public ByteBuffer getBuffer() {
+        return builder.getTargetBuffer();
+    }
 
     public boolean expectSendCompletion() {
         return expectSendCompletion;
@@ -88,8 +90,12 @@ public final class ClientRDMARequest {
         return correlationId;
     }
 
-    public LinkedList<IbvSendWR> getWRs() { return builder.build(); }
+    public LinkedList<IbvSendWR> getWRs() {
+        return builder.build();
+    }
 
-    public RDMAWrBuilder getBuilder(){ return builder; }
+    public RDMAWrBuilder getBuilder() {
+        return builder;
+    }
 
 }

@@ -16,7 +16,14 @@
  */
 package org.apache.kafka.clients;
 
-import com.ibm.disni.verbs.*;
+import com.ibm.disni.verbs.RdmaCmId;
+import com.ibm.disni.verbs.IbvQP;
+import com.ibm.disni.verbs.IbvCQ;
+import com.ibm.disni.verbs.IbvWC;
+import com.ibm.disni.verbs.IbvSendWR;
+import com.ibm.disni.verbs.IbvRecvWR;
+import com.ibm.disni.verbs.SVCPollCq;
+import com.ibm.disni.verbs.SVCPostRecv;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -29,7 +36,7 @@ public class SimpleVerbsEP {
     private final IbvCQ recvcq;
 
 
-    public final int CanPostReceives;
+    public final int canPostReceives;
 
     private int canIssueRdma;
     private int canSendRequests;
@@ -49,60 +56,62 @@ public class SimpleVerbsEP {
     private final  int contentedLimit;
 
     SimpleVerbsEP(RdmaCmId id, IbvQP qp, IbvCQ sendcq, IbvCQ recvcq, int maxRecvSize,
-                  int maxSendSize, int requestQuota, int wcBatch, int contentedLimit){
+                  int maxSendSize, int requestQuota, int wcBatch, int contentedLimit) {
         this.id = id;
         this.qp = qp;
         this.sendcq = sendcq;
         this.recvcq = recvcq;
         this.canIssueRdma = maxSendSize;
         this.canSendRequests = requestQuota;
-        this.CanPostReceives = maxRecvSize;
+        this.canPostReceives = maxRecvSize;
         sendwcList = new IbvWC[wcBatch];
         recvwcList = new IbvWC[wcBatch];
-        for (int i = 0; i < sendwcList.length; i++){
+        for (int i = 0; i < sendwcList.length; i++) {
             sendwcList[i] = new IbvWC();
         }
-        for (int i = 0; i < recvwcList.length; i++){
+        for (int i = 0; i < recvwcList.length; i++) {
             recvwcList[i] = new IbvWC();
         }
-        this.contentedLimit= contentedLimit;
+        this.contentedLimit = contentedLimit;
 
     }
 
-    public boolean ready() { return true; }
+    public boolean ready() {
+        return true; }
 
-    public int getQPnum() throws Exception { return qp.getQp_num(); }
+    public int getQPnum() throws Exception {
+        return qp.getQp_num(); }
 
-    public void postsend(IbvSendWR wr, boolean dosend) throws Exception{
+    public void postsend(IbvSendWR wr, boolean dosend) throws Exception {
         delayedWrites.add(wr);
 
-        if(dosend) {
+        if (dosend) {
             trigger_send();
         }
     }
 
     void trigger_send() throws Exception{
 
-        int canSend = Math.min(canIssueRdma,canSendRequests );
-        if(canSend==0)
+        int canSend = Math.min(canIssueRdma, canSendRequests);
+        if (canSend == 0)
             return;
 
         int willSend = Math.min(canSend, delayedWrites.size());
 
-        if(willSend == 0)
+        if (willSend == 0)
             return;
 
 
-        LinkedList<IbvSendWR> wrList_tosend =  new LinkedList<>();
+        LinkedList<IbvSendWR> wrListToSend =  new LinkedList<>();
 
-        for(int i =0; i < willSend; i++){
-            wrList_tosend.add(delayedWrites.pollFirst());
+        for (int i =0; i < willSend; i++) {
+            wrListToSend.add(delayedWrites.pollFirst());
         }
 
-        canIssueRdma-=willSend;
-        canSendRequests-=willSend;
+        canIssueRdma -= willSend;
+        canSendRequests -= willSend;
 
-        qp.postSend(wrList_tosend,null).execute().free();
+        qp.postSend(wrListToSend, null).execute().free();
     }
 
 
@@ -112,19 +121,19 @@ public class SimpleVerbsEP {
         Warning! IbvWC must be processed before polling again!
 
      */
-    public LinkedList<IbvWC> pollsend( ) throws Exception{
-        LinkedList<IbvWC> recvList =  new LinkedList<>();
+    public LinkedList<IbvWC> pollsend() throws Exception {
+        LinkedList<IbvWC> recvList = new LinkedList<>();
         pollsend(recvList);
         return recvList;
     }
 
     public int pollsend(LinkedList<IbvWC> recvList) throws Exception{
-        if(this.sendpoll == null) {
+        if (this.sendpoll == null) {
             this.sendpoll = sendcq.poll(sendwcList, sendwcList.length);
         }
         int compl = this.sendpoll.execute().getPolls();
-        for(int i = 0; i < compl; i++){
-            if(sendwcList[i].getOpcode() == IbvWC.IbvWcOpcode.IBV_WC_RDMA_READ.getOpcode()){
+        for (int i = 0; i < compl; i++) {
+            if (sendwcList[i].getOpcode() == IbvWC.IbvWcOpcode.IBV_WC_RDMA_READ.getOpcode()) {
                 canSendRequests++;
             }
             recvList.add(sendwcList[i]);
@@ -134,28 +143,28 @@ public class SimpleVerbsEP {
         return compl;
     }
 
-    public boolean hasUnsentRequests(){
+    public boolean hasUnsentRequests() {
         return !delayedWrites.isEmpty();
     }
 
-    public boolean isContented( ){
+    public boolean isContented() {
         return delayedWrites.size() > this.contentedLimit;
     }
 
 
 
-    public LinkedList<IbvWC> pollrecv( ) throws Exception{
-        LinkedList<IbvWC> recvList =  new LinkedList<>();
+    public LinkedList<IbvWC> pollrecv() throws Exception {
+        LinkedList<IbvWC> recvList = new LinkedList<>();
         pollrecv(recvList);
         return recvList;
     }
 
-    public int pollrecv(LinkedList<IbvWC> recvList) throws Exception{
-        if(this.recvpoll == null) {
+    public int pollrecv(LinkedList<IbvWC> recvList) throws Exception {
+        if (this.recvpoll == null) {
             this.recvpoll = recvcq.poll(recvwcList, sendwcList.length);
         }
         int compl = this.recvpoll.execute().getPolls();
-        for(int i = 0; i < compl; i++){
+        for (int i = 0; i < compl; i++) {
             recvList.add(recvwcList[i]);
             canSendRequests++;
         }
@@ -164,12 +173,12 @@ public class SimpleVerbsEP {
 
 
 
-    public void postEmptyRecv() throws Exception{
-        if(emptyrecv == null){
+    public void postEmptyRecv() throws Exception {
+        if (emptyrecv == null) {
             IbvRecvWR wr = new IbvRecvWR();
-            List<IbvRecvWR>  list_wr = new LinkedList<>();
-            list_wr.add(wr);
-            emptyrecv = qp.postRecv(list_wr, null);
+            List<IbvRecvWR>  listWR = new LinkedList<>();
+            listWR.add(wr);
+            emptyrecv = qp.postRecv(listWR, null);
         }
 
         emptyrecv.execute();

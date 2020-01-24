@@ -16,8 +16,18 @@
  */
 package org.apache.kafka.clients.consumer.internals;
 
-import org.apache.kafka.clients.*;
-import org.apache.kafka.clients.consumer.*;
+import org.apache.kafka.clients.Metadata;
+import org.apache.kafka.clients.StaleMetadataException;
+import org.apache.kafka.clients.FetchSessionHandler;
+import org.apache.kafka.clients.FetchRdmaSessionHandler;
+import org.apache.kafka.clients.ClientResponse;
+import org.apache.kafka.clients.ClientRDMAResponse;
+import org.apache.kafka.clients.RDMAWrBuilder;
+import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.OffsetResetStrategy;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.OffsetOutOfRangeException;
 import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Node;
@@ -40,8 +50,23 @@ import org.apache.kafka.common.metrics.stats.Meter;
 import org.apache.kafka.common.metrics.stats.Min;
 import org.apache.kafka.common.metrics.stats.Value;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.record.*;
-import org.apache.kafka.common.requests.*;
+import org.apache.kafka.common.record.BufferSupplier;
+import org.apache.kafka.common.record.Record;
+import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.record.Records;
+import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.record.ControlRecordType;
+import org.apache.kafka.common.record.InvalidRecordException;
+import org.apache.kafka.common.requests.IsolationLevel;
+import org.apache.kafka.common.requests.FetchRequest;
+import org.apache.kafka.common.requests.FetchResponse;
+import org.apache.kafka.common.requests.MetadataRequest;
+import org.apache.kafka.common.requests.MetadataResponse;
+import org.apache.kafka.common.requests.ListOffsetRequest;
+import org.apache.kafka.common.requests.ListOffsetResponse;
+import org.apache.kafka.common.requests.RDMAConsumeAddressRequest;
+import org.apache.kafka.common.requests.RDMAConsumeAddressResponse;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.utils.CloseableIterator;
 import org.apache.kafka.common.utils.LogContext;
@@ -52,9 +77,21 @@ import org.slf4j.Logger;
 
 import java.io.Closeable;
 import java.nio.ByteBuffer;
-import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.PriorityQueue;
+import java.util.Optional;
+import java.util.Iterator;
+import java.util.Comparator;
+
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -104,7 +141,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
     private final Map<Integer, FetchSessionHandler> sessionHandlers;
     private final AtomicReference<RuntimeException> cachedListOffsetsException = new AtomicReference<>();
 
-    private final ConsumerRDMAClient rdmaClient ;
+    private final ConsumerRDMAClient rdmaClient;
     private final HashMap<Integer, FetchRdmaSessionHandler> rdmaSessionHandlers;
 
     private final int cacheSize;
@@ -135,9 +172,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                    long retryBackoffMs,
                    long requestTimeoutMs,
                    IsolationLevel isolationLevel) {
-        this(logContext,client,minBytes,maxBytes,maxWaitMs,fetchSize,maxPollRecords,checkCrcs,
-                keyDeserializer,valueDeserializer,metadata,subscriptions,metrics,metricsRegistry,
-                time,retryBackoffMs,requestTimeoutMs,isolationLevel,null,0,0,false,0L,0L);
+        this(logContext, client, minBytes, maxBytes, maxWaitMs, fetchSize, maxPollRecords, checkCrcs,
+                keyDeserializer, valueDeserializer, metadata, subscriptions, metrics, metricsRegistry,
+                time, retryBackoffMs, requestTimeoutMs, isolationLevel, null, 0, 0, false, 0L, 0L);
     }
 
     public Fetcher(LogContext logContext,
@@ -157,8 +194,8 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                    Time time,
                    long retryBackoffMs,
                    long requestTimeoutMs,
-                   IsolationLevel isolationLevel,ConsumerRDMAClient rdmaClient,
-                   int cacheSize, int wrapAroundLimit, boolean withSlots, long frequencyOfRdmaUpdate,long addressUpdateTimeoutInMs) {
+                   IsolationLevel isolationLevel, ConsumerRDMAClient rdmaClient,
+                   int cacheSize, int wrapAroundLimit, boolean withSlots, long frequencyOfRdmaUpdate, long addressUpdateTimeoutInMs) {
         this.log = logContext.logger(Fetcher.class);
         this.logContext = logContext;
         this.time = time;
@@ -198,7 +235,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
         public final Map<TopicPartition, RDMAConsumeAddressResponse.PartitionData> fetchedOffsets;
         public final Set<TopicPartition> failedPartitions;
 
-        public GetAddressResult(Node node,Map<TopicPartition, RDMAConsumeAddressResponse.PartitionData> fetchedOffsets, Set<TopicPartition> partitionsNeedingRetry) {
+        public GetAddressResult(Node node, Map<TopicPartition, RDMAConsumeAddressResponse.PartitionData> fetchedOffsets, Set<TopicPartition> partitionsNeedingRetry) {
             this.node = node;
             this.fetchedOffsets = fetchedOffsets;
             this.failedPartitions = partitionsNeedingRetry;
@@ -222,14 +259,14 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
 
     // RDMA Patch
-    private void sendGetAddressRequestsAsync( Map<Node, GetAddressRequestInfo> offsetToGetAddressByNode){
+    private void sendGetAddressRequestsAsync(Map<Node, GetAddressRequestInfo> offsetToGetAddressByNode) {
 
         for (Map.Entry<Node, GetAddressRequestInfo> entry : offsetToGetAddressByNode.entrySet()) {
 
             outstandingFetchAddress.incrementAndGet();
 
             RequestFuture<GetAddressResult> future =
-                    sendGetAddressRequest(entry.getKey(), entry.getValue().toFetch, entry.getValue().toForget );
+                    sendGetAddressRequest(entry.getKey(), entry.getValue().toFetch, entry.getValue().toForget);
             future.addListener(new RequestFutureListener<GetAddressResult>() {
                 @Override
                 public void onSuccess(GetAddressResult partialResult) {
@@ -611,8 +648,8 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
 
     // RDMA patch
-    private   Map<Node, List<RDMAWrBuilder>> prepareRdmaFetchRequests(  Map<Node, GetAddressRequestInfo> offsetToGetAddressByNode,
-                                                                         Map<Node, RDMAWrBuilder> partitionsToUpdateAddressWithRdma) {
+    private Map<Node, List<RDMAWrBuilder>> prepareRdmaFetchRequests(Map<Node, GetAddressRequestInfo> offsetToGetAddressByNode,
+                                                                    Map<Node, RDMAWrBuilder> partitionsToUpdateAddressWithRdma) {
         Map<Node, List<RDMAWrBuilder>> fetchable = new LinkedHashMap<>();
 
 
@@ -637,13 +674,13 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                     log.trace("Send address request to Node {}", node);
 
                     FetchRdmaSessionHandler handler = rdmaSessionHandlers.computeIfAbsent(node.id(),
-                            t -> new FetchRdmaSessionHandler(logContext, node.id(),rdmaClient,fetchSize,
-                                            cacheSize,wrapAroundLimit,withSlots,frequencyOfRdmaUpdate,addressUpdateTimeoutInMs));
+                            t -> new FetchRdmaSessionHandler(logContext, node.id(), rdmaClient, fetchSize,
+                                        cacheSize, wrapAroundLimit, withSlots, frequencyOfRdmaUpdate, addressUpdateTimeoutInMs));
 
-                    if( handler.requiresUpdatePartition(partition, isolationLevel, nowNanos)){
+                    if (handler.requiresUpdatePartition(partition, isolationLevel, nowNanos)) {
                         long position = this.subscriptions.position(partition);
                         GetAddressRequestInfo topicData =
-                                offsetToGetAddressByNode.computeIfAbsent(node, n -> new GetAddressRequestInfo(new HashMap<>(),new HashMap<>() ));
+                                offsetToGetAddressByNode.computeIfAbsent(node, n -> new GetAddressRequestInfo(new HashMap<>(), new HashMap<>()));
 
                         topicData.toFetch.putIfAbsent(partition,  new RDMAConsumeAddressRequest.PartitionData(position, Optional.empty()));
                     }
@@ -662,13 +699,13 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                     // possible race condition with position
 
                     GetAddressRequestInfo topicData =
-                            offsetToGetAddressByNode.computeIfAbsent(node, n -> new GetAddressRequestInfo(new HashMap<>(),new HashMap<>() ));
+                            offsetToGetAddressByNode.computeIfAbsent(node, n -> new GetAddressRequestInfo(new HashMap<>(), new HashMap<>()));
 
-                    topicData.toFetch.putIfAbsent(partition,  new RDMAConsumeAddressRequest.PartitionData(position, Optional.empty()));
+                    topicData.toFetch.putIfAbsent(partition, new RDMAConsumeAddressRequest.PartitionData(position, Optional.empty()));
 
                     long baseOffset = handler.getBaseOffsetToForget(partition);
-                    if(baseOffset != -1L){
-                        topicData.toForget.putIfAbsent(partition,baseOffset);
+                    if (baseOffset != -1L) {
+                        topicData.toForget.putIfAbsent(partition, baseOffset);
                     }
 
                 } else if (handler.requiresRdmaUpdatePartition(partition, isolationLevel, nowNanos)) {
@@ -679,11 +716,11 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
                 } else {
 
-                    if(!handler.isReady(partition)){
+                    if (!handler.isReady(partition)) {
                         continue;
                     }
 
-                    RDMAWrBuilder request = handler.getFetchRequestForPartiton(partition,isolationLevel,position);
+                    RDMAWrBuilder request = handler.getFetchRequestForPartiton(partition, isolationLevel, position);
 
                     if (request != null) {
 
@@ -705,10 +742,10 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
 
     // RDMA Patch
-    private void sendAddressUpdateRdmaRequestsAsync(Map<Node, RDMAWrBuilder> partitionsToUpdateAddressWithRdma){
+    private void sendAddressUpdateRdmaRequestsAsync(Map<Node, RDMAWrBuilder> partitionsToUpdateAddressWithRdma) {
 
 
-        for (Map.Entry<Node,RDMAWrBuilder> entry : partitionsToUpdateAddressWithRdma.entrySet()) {
+        for (Map.Entry<Node, RDMAWrBuilder> entry : partitionsToUpdateAddressWithRdma.entrySet()) {
             Node node = entry.getKey();
             rdmaClient.send(entry.getKey().idString(), entry.getValue())
                     .addListener(new RequestFutureListener<ClientRDMAResponse>() {
@@ -732,15 +769,15 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
     }
 
     // RDMA patch
-    public synchronized int sendRdmaFetches( ) { //
+    public synchronized int sendRdmaFetches() { //
      //   Map<TopicPartition, Long> partitionsToForget = new HashMap< >();
       //  Map<TopicPartition, Long> partitionsToGetAddress = new HashMap< >();
 
         Map<Node, GetAddressRequestInfo> offsetToGetAddressByNode = new HashMap<>();
-        Map<Node, RDMAWrBuilder> partitionsToUpdateAddressWithRdma = new HashMap< >();
+        Map<Node, RDMAWrBuilder> partitionsToUpdateAddressWithRdma = new HashMap<>();
 
         Map<Node, List<RDMAWrBuilder>> fetchRequestMap =
-                prepareRdmaFetchRequests(offsetToGetAddressByNode,partitionsToUpdateAddressWithRdma);
+                prepareRdmaFetchRequests(offsetToGetAddressByNode, partitionsToUpdateAddressWithRdma);
 
 
         sendGetAddressRequestsAsync(offsetToGetAddressByNode);
@@ -748,16 +785,16 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
         // it sends RDMA read slot
         sendAddressUpdateRdmaRequestsAsync(partitionsToUpdateAddressWithRdma);
 
-        if (metadata.updateRequested()){
+        if (metadata.updateRequested()) {
             client.pollNoWakeup();
         }
 
-        if(outstandingFetchAddress.get()!=0){
+        if (outstandingFetchAddress.get()!=0) {
             Timer pollTimer = time.timer(5);
             client.poll(pollTimer, () -> {
                 // since a fetch might be completed by the background thread, we need this poll condition
                 // to ensure that we do not block unnecessarily in poll()
-                return outstandingFetchAddress.get()==0;
+                return outstandingFetchAddress.get() == 0;
             });
         }
 
@@ -777,9 +814,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                         .addListener(new RequestFutureListener<ClientRDMAResponse>() {
                             @Override
                             public void onSuccess(ClientRDMAResponse response) {
-                               synchronized (Fetcher.this) {
-                                 //   @SuppressWarnings("unchecked")
-                                //    System.out.println("Success");
+                                synchronized (Fetcher.this) {
+                                    // @SuppressWarnings("unchecked")
+                                    // System.out.println("Success");
                                     FetchRdmaSessionHandler handler = rdmaSessionHandlers.get(fetchTarget.id());
                                     if (handler == null) {
                                         log.error("Unable to find FetchRdmaSessionHandler for node {}. Ignoring fetch response.",
@@ -796,7 +833,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
                                     MemoryRecords memRecords = data.getMemoryRecords();
 
-                                    if( memRecords == null){
+                                    if (memRecords == null) {
                                         return;
                                     }
 
@@ -821,18 +858,18 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                                     completedFetches.add(new CompletedFetch(partition, fetchOffset, fetchData, metricAggregator,
                                             apiversion));
 
-                                    sensors.fetchLatency.record(response.requestLatencyNanos()/1_000_000L); // convert to miliseconds
+                                    sensors.fetchLatency.record(response.requestLatencyNanos() / 1_000_000L); // convert to miliseconds
                                 }
-                             }
+                            }
 
                             @Override
                             public void onFailure(RuntimeException e) {
-                               synchronized (Fetcher.this) {
+                                synchronized (Fetcher.this) {
                                     FetchRdmaSessionHandler handler = rdmaSessionHandlers.get(fetchTarget.id());
                                     if (handler != null) {
                                         handler.handleError(e);
                                     }
-                               }
+                                }
                             }
                         });
             }
@@ -1083,7 +1120,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                     public void onSuccess(ClientResponse response, RequestFuture<GetAddressResult> future) {
                         RDMAConsumeAddressResponse lor = (RDMAConsumeAddressResponse) response.responseBody();
                         log.trace("Received RDMAConsumeAddressResponse {} from broker {}", lor, node);
-                        handleGetAddressResponse(node,getAddressToSearch, lor, future);
+                        handleGetAddressResponse(node, getAddressToSearch, lor, future);
                     }
                 });
     }
@@ -1096,7 +1133,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
         Map<TopicPartition, RDMAConsumeAddressResponse.PartitionData> fetchedOffsets = new HashMap<>();
         Set<TopicPartition> failedPartitions = new HashSet<>();
 
-        if(!rdmaClient.isConnected(targetnode)){
+        if (!rdmaClient.isConnected(targetnode)) {
             rdmaClient.tryConnect(targetnode.id(), getAddressResponse.getHostName(), getAddressResponse.getRdmaPort());
         }
 
@@ -1117,7 +1154,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
             }
         }
 
-        future.complete(new GetAddressResult(targetnode,fetchedOffsets, failedPartitions));
+        future.complete(new GetAddressResult(targetnode, fetchedOffsets, failedPartitions));
     }
 
 

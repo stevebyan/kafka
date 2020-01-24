@@ -549,7 +549,7 @@ public class ConsumerConfig extends AbstractConfig {
                                         RDMA_CONTENTION_LIMIT_DOC)
                                 .define(RDMA_CACHE_SIZE,
                                         Type.INT,
-                                        16*1024*1024,
+                                        16 * 1024 * 1024,
                                         atLeast(1024),
                                         Importance.LOW,
                                         RDMA_CACHE_SIZE_DOC)

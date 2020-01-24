@@ -23,7 +23,6 @@ import org.apache.kafka.common.protocol.types.ArrayOf;
 import org.apache.kafka.common.protocol.types.Field;
 import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.utils.CollectionUtils;
 
 import java.nio.ByteBuffer;
@@ -32,7 +31,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.apache.kafka.common.protocol.CommonFields.*;
+//import static org.apache.kafka.common.protocol.CommonFields.*;
+import static org.apache.kafka.common.protocol.CommonFields.HOST;
+import static org.apache.kafka.common.protocol.CommonFields.TOPIC_NAME;
+import static org.apache.kafka.common.protocol.CommonFields.PARTITION_ID;
+import static org.apache.kafka.common.protocol.CommonFields.ERROR_CODE;
 import static org.apache.kafka.common.protocol.types.Type.INT64;
 
 /**
@@ -42,7 +45,7 @@ public class RDMAProduceAddressResponse extends AbstractResponse {
     public static final long UNKNOWN_OFFSET = -1L;
     public static final long UNKNOWN_ADDRESS = -1L;
     public static final int UNKNOWN_RKEY = -1;
-    public static final int UNKNOWN_IMMDATA= -1;
+    public static final int UNKNOWN_IMMDATA = -1;
     public static final int UNKNOWN_LENGTH = -1;
 
 
@@ -78,7 +81,7 @@ public class RDMAProduceAddressResponse extends AbstractResponse {
                     new Field(PARTITION_RESPONSES_KEY_NAME, new ArrayOf(new Schema(
                             PARTITION_ID,
                             ERROR_CODE,
-                            new Field(BASE_OFFSET_KEY_NAME, INT64),OFFSET,ADDRESS,RKEY,IMMDATA,LENGTH
+                            new Field(BASE_OFFSET_KEY_NAME, INT64), OFFSET, ADDRESS, RKEY, IMMDATA, LENGTH
                     )))))));
 
 
@@ -123,7 +126,7 @@ public class RDMAProduceAddressResponse extends AbstractResponse {
                 int rkey = partRespStruct.get(RKEY);
                 int immdata = partRespStruct.get(IMMDATA);
                 int length = partRespStruct.get(LENGTH);
-                responses.put(tp, new PartitionResponse(error, baseOffset,offset,address,rkey,immdata,length));
+                responses.put(tp, new PartitionResponse(error, baseOffset, offset, address, rkey, immdata,length));
             }
         }
     }
@@ -131,8 +134,8 @@ public class RDMAProduceAddressResponse extends AbstractResponse {
     @Override
     protected Struct toStruct(short version) {
         Struct struct = new Struct(ApiKeys.PRODUCER_RDMA_REGISTER.responseSchema(version));
-        struct.set(HOST,hostname);
-        struct.set(PORT,rdmaport);
+        struct.set(HOST, hostname);
+        struct.set(PORT, rdmaport);
         Map<String, Map<Integer, PartitionResponse>> responseByTopic = CollectionUtils.groupPartitionDataByTopic(responses);
         List<Struct> topicDatas = new ArrayList<>(responseByTopic.size());
         for (Map.Entry<String, Map<Integer, PartitionResponse>> entry : responseByTopic.entrySet()) {
@@ -200,10 +203,10 @@ public class RDMAProduceAddressResponse extends AbstractResponse {
 
 
         public PartitionResponse(Errors error) {
-            this(error, UNKNOWN_OFFSET,UNKNOWN_OFFSET,UNKNOWN_ADDRESS,UNKNOWN_RKEY,UNKNOWN_IMMDATA,UNKNOWN_LENGTH);
+            this(error, UNKNOWN_OFFSET, UNKNOWN_OFFSET, UNKNOWN_ADDRESS, UNKNOWN_RKEY, UNKNOWN_IMMDATA, UNKNOWN_LENGTH);
         }
 
-        public PartitionResponse(Errors error, long baseOffset, long offset,long address, int rkey,  int immdata, int length) {
+        public PartitionResponse(Errors error, long baseOffset, long offset, long address, int rkey,  int immdata, int length) {
             this.error = error;
             this.offset = offset;
             this.baseOffset = baseOffset;

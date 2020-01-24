@@ -25,9 +25,15 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.*;
-
+import java.util.List;
+import java.util.LinkedList;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Deque;
+import java.util.ArrayDeque;
+import java.util.Optional;
+
 /**
 
  * This class is not thread-safe!
@@ -44,24 +50,24 @@ public abstract class RdmaClient  {
     protected IbvPd pd = null;
 
 
-    static public class RDMAQPparams{
-        public final int max_send_wr;
-        public final int max_recv_wr;
-        public final int max_send_sge;
-        public final int max_recv_sge;
-        public final int max_inline_data;
+    static public class RDMAQPparams {
+        public final int maxSendWr;
+        public final int maxRecvWr;
+        public final int maxSendSge;
+        public final int maxRecvSge;
+        public final int maxInlineData;
 
 
-        public RDMAQPparams(int max_send_wr,int max_recv_wr) {
-            this(max_send_wr, max_recv_wr, 1,1,0);
+        public RDMAQPparams(int maxSendWr, int maxRecvWr) {
+            this(maxSendWr, maxRecvWr, 1, 1, 0);
         }
 
-        public RDMAQPparams(int max_send_wr,int max_recv_wr, int max_send_sge, int max_recv_sge, int max_inline_data ){
-            this.max_send_wr = max_send_wr;
-            this.max_recv_wr = max_recv_wr;
-            this.max_send_sge = max_send_sge;
-            this.max_recv_sge = max_recv_sge;
-            this.max_inline_data = max_inline_data;
+        public RDMAQPparams(int maxSendWr, int maxRecvWr, int maxSendSge, int maxRecvSge, int maxInlineData) {
+            this.maxSendWr = maxSendWr;
+            this.maxRecvWr = maxRecvWr;
+            this.maxSendSge = maxSendSge;
+            this.maxRecvSge = maxRecvSge;
+            this.maxInlineData = maxInlineData;
         }
     }
 
@@ -69,8 +75,8 @@ public abstract class RdmaClient  {
     protected final RdmaEventChannel cmChannel;
 
 
-    protected final Map<Integer,SimpleVerbsEP> qpnumToConnection = new HashMap<>();
-    protected final Map<String,SimpleVerbsEP> nodeToConnection = new HashMap<>();
+    protected final Map<Integer, SimpleVerbsEP> qpnumToConnection = new HashMap<>();
+    protected final Map<String, SimpleVerbsEP> nodeToConnection = new HashMap<>();
 
     private final String clientId;
 
@@ -92,8 +98,8 @@ public abstract class RdmaClient  {
                                              int requestTimeoutMs,
                                              boolean expectSendCompletion,
                                              boolean expectResponse,
-                                             RDMARequestCompletionHandler callback){
-        return new ClientRDMARequest(destination,correlation++,builder,clientId,createdTimeNanos,expectSendCompletion,expectResponse,callback);
+                                             RDMARequestCompletionHandler callback) {
+        return new ClientRDMARequest(destination, correlation++, builder, clientId, createdTimeNanos, expectSendCompletion, expectResponse, callback);
 
     }
 
@@ -106,65 +112,63 @@ public abstract class RdmaClient  {
     }
 
 
-    public boolean connect(Node node) throws Exception
-    {
-        return connect(node,Optional.empty());
+    public boolean connect(Node node) throws Exception {
+        return connect(node, Optional.empty());
     }
 
-    public boolean connect(Node node, Optional<RDMAQPparams> cap)  throws Exception
-    {
+    public boolean connect(Node node, Optional<RDMAQPparams> cap) throws Exception {
         if (node.isEmpty())
             throw new IllegalArgumentException("Cannot connect to empty node " + node);
 
-        return connect(node.idString(),node.host(),node.port(),cap);
+        return connect(node.idString(), node.host(), node.port(), cap);
     }
 
-    public boolean connect(String id, String hostname, int port, Optional<RDMAQPparams> cap)  throws Exception{
+    public boolean connect(String id, String hostname, int port, Optional<RDMAQPparams> cap) throws Exception {
 
 
-        if(nodeToConnection.containsKey(id)){
+        if (nodeToConnection.containsKey(id)) {
            // System.out.println("Rdma connection already exist " + id);
             return false;
         }
 
-        RdmaCmId idPriv = PrepareConnection(hostname,port);
-        SimpleVerbsEP ep = FinalizeConnection(idPriv,cap);
+        RdmaCmId idPriv = PrepareConnection(hostname, port);
+        SimpleVerbsEP ep = FinalizeConnection(idPriv, cap);
 
-        int recvSize = ep.CanPostReceives;
-        for( int i =0; i<recvSize; i++) {
+        int recvSize = ep.canPostReceives;
+        for (int i = 0; i < recvSize; i++) {
             ep.postEmptyRecv();
         }
 
         Integer qpnum = ep.getQPnum();
 
-        qpnumToConnection.put(qpnum,ep);
-        nodeToConnection.put(id,ep);
+        qpnumToConnection.put(qpnum, ep);
+        nodeToConnection.put(id, ep);
 
 
         return ep.ready();
     }
 
 
-    public boolean isConnected(Node node){
+    public boolean isConnected(Node node) {
         return nodeToConnection.containsKey(node.idString());
     }
 
 
-    public IbvMr MemReg(ByteBuffer buffer) throws Exception{
-        if(this.pd == null) {
+    public IbvMr MemReg(ByteBuffer buffer) throws Exception {
+        if (this.pd == null) {
             throw new IOException("VerbsClient::pd null");
         }
         System.out.println("memreg is called");
         int access = IbvMr.IBV_ACCESS_REMOTE_READ | IbvMr.IBV_ACCESS_LOCAL_WRITE | IbvMr.IBV_ACCESS_REMOTE_WRITE;
-        IbvMr mr  = pd.regMr(buffer, access).execute().free().getMr();
+        IbvMr mr = pd.regMr(buffer, access).execute().free().getMr();
         return mr;
     }
 
-    public boolean CanRegisterMemoty(){
+    public boolean CanRegisterMemoty() {
         return this.pd != null;
     }
 
-    private RdmaCmId  PrepareConnection(String hostname, int port ) throws Exception {
+    private RdmaCmId  PrepareConnection(String hostname, int port) throws Exception {
 
         RdmaCmId idPriv = cmChannel.createId(RdmaCm.RDMA_PS_TCP);
         if (idPriv == null) {
@@ -172,8 +176,8 @@ public abstract class RdmaClient  {
         }
 
         //before connecting, we have to resolve addresses
-        InetAddress _dst = InetAddress.getByName(hostname);
-        InetSocketAddress dst = new InetSocketAddress(_dst,port);
+        InetAddress hostDst = InetAddress.getByName(hostname);
+        InetSocketAddress dst = new InetSocketAddress(hostDst, port);
         idPriv.resolveAddr(null, dst, 2000);
 
         //resolve addr returns an event, we have to catch that event
@@ -225,8 +229,8 @@ public abstract class RdmaClient  {
 
         //request.createdTimeNanos
 
-        SimpleVerbsEP ep = nodeToConnection.getOrDefault(nodeId,null);
-        if(ep == null){
+        SimpleVerbsEP ep = nodeToConnection.getOrDefault(nodeId, null);
+        if (ep == null) {
             abortedSends.add(request);
             return;
         }
@@ -235,7 +239,7 @@ public abstract class RdmaClient  {
             LinkedList<IbvSendWR> wrs = request.getWRs();
 
 
-            pendingCompletions+=wrs.size();
+            pendingCompletions += wrs.size();
 
             IbvSendWR lastwr = wrs.removeLast();
 
@@ -247,8 +251,8 @@ public abstract class RdmaClient  {
             int wrid = correlation++;
             lastwr.setWr_id(wrid);
 
-            if(request.expectSendCompletion()){
-                PendingRequest pending= new PendingRequest(lastwr.getWr_id(), request, lastwr, request.createdTimeNanos);
+            if (request.expectSendCompletion()) {
+                PendingRequest pending = new PendingRequest(lastwr.getWr_id(), request, lastwr, request.createdTimeNanos);
                 Deque<PendingRequest> reqs = this.pendingSendRequests.get(ep.getQPnum());
                 if (reqs == null) {
                     reqs = new ArrayDeque<>();
@@ -257,8 +261,8 @@ public abstract class RdmaClient  {
                 reqs.addFirst(pending);
             }
 
-            if(request.expectResponse()){
-                PendingRequest pending= new PendingRequest(lastwr.getImm_data(),request, lastwr, request.createdTimeNanos);
+            if (request.expectResponse()) {
+                PendingRequest pending = new PendingRequest(lastwr.getImm_data(), request, lastwr, request.createdTimeNanos);
                 Deque<PendingRequest> reqs = this.pendingRecvRequests.get(ep.getQPnum());
                 if (reqs == null) {
                     reqs = new ArrayDeque<>();
@@ -270,7 +274,7 @@ public abstract class RdmaClient  {
             times.addLast(nowNanos);
             ep.postsend(lastwr, true);
 
-        }catch(Exception e){
+        } catch (Exception e) {
             System.out.println("Error on send");
         }
     }
@@ -281,28 +285,28 @@ public abstract class RdmaClient  {
 
         if (!abortedSends.isEmpty()) {
             List<ClientRDMAResponse> responses = new ArrayList<>();
-           // handleAbortedSends(responses);
+            // handleAbortedSends(responses);
             completeResponses(responses);
             return responses;
         }
 
-        List<IbvWC> completed  = pollwc();
+        List<IbvWC> completed = pollwc();
 
         try {
             for (Map.Entry<Integer, SimpleVerbsEP> entry : qpnumToConnection.entrySet()) {
                 SimpleVerbsEP ep = entry.getValue();
-                if(ep.hasUnsentRequests()){
+                if (ep.hasUnsentRequests()) {
                     ep.trigger_send();
                 }
             }
-        }catch(Exception e){
+        } catch (Exception e) {
             System.out.println("Error on trigger_send");
         }
 
         List<ClientRDMAResponse> responses = new ArrayList<>();
         try {
             handleWC(responses, completed, nowNanos);
-        }catch(Exception e){
+        } catch (Exception e) {
             System.out.println("Error on handleWC" + e.toString());
         }
 
@@ -315,36 +319,36 @@ public abstract class RdmaClient  {
 
     private void handleWC(List<ClientRDMAResponse> responses,  List<IbvWC> wcs, long nowNanos) throws Exception {
         // if no response is expected then when the send is completed, return it
-        for (IbvWC wc : wcs ) {
+        for (IbvWC wc : wcs) {
             pendingCompletions--;
 
-            boolean isRecv = (wc.getOpcode() >= IbvWC.IbvWcOpcode.IBV_WC_RECV.getOpcode());
+            boolean isRecv = wc.getOpcode() >= IbvWC.IbvWcOpcode.IBV_WC_RECV.getOpcode();
 
             int qpnum = wc.getQp_num();
 
-            if(isRecv)
+            if (isRecv)
                 qpnumToConnection.get(qpnum).postEmptyRecv();
-            else{
-           /*     long sendingtime = nowNanos - times.pollFirst();
+            else {
+            /*     long sendingtime = nowNanos - times.pollFirst();
                 long pollGap = nowNanos-last_poll_time;
-                if(sendingtime > 1_000_000 && pollGap > 1_000_000 ){ // 1 ms
+                if (sendingtime > 1_000_000 && pollGap > 1_000_000 ) { // 1 ms
                     System.out.println("sendingtime is "+sendingtime + "Last poll was "+ pollGap);
                 }*/
             }
 
-            Deque<PendingRequest> reqs = (isRecv) ? this.pendingRecvRequests.get(qpnum) :
-                                                    this.pendingSendRequests.get(qpnum);
+            Deque<PendingRequest> reqs = isRecv ? this.pendingRecvRequests.get(qpnum) :
+                                                  this.pendingSendRequests.get(qpnum);
 
-            if(reqs == null){
+            if (reqs == null) {
                 continue;
             }
 
             PendingRequest request = reqs.getLast();
 
-            if(isRecv){
-                assert(request.tomatch == wc.getImm_data());
+            if (isRecv) {
+                assert request.tomatch == wc.getImm_data();
             } else {
-                if(request.tomatch != wc.getWr_id())
+                if (request.tomatch != wc.getWr_id())
                     continue;
             }
 
@@ -376,7 +380,7 @@ public abstract class RdmaClient  {
         final long createdTimeNanos;
 
         public PendingRequest(long tomatch, ClientRDMARequest request, IbvSendWR wr, long now) {
-            this(tomatch,request.destination(),request.callback(),request.expectResponse(),request,wr,now);
+            this(tomatch, request.destination(), request.callback(), request.expectResponse(), request, wr, now);
         }
 
         public PendingRequest(long tomatch,

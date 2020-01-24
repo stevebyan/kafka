@@ -36,7 +36,6 @@ import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 
 
@@ -173,18 +172,18 @@ public class FileRecords extends AbstractRecords implements Closeable {
         return written;
     }
 
-    public int rdmaAppend(int expected_pos, int written) throws IOException {
+    public int rdmaAppend(int expectedPos, int written) throws IOException {
         if (written > Integer.MAX_VALUE - size.get())
             throw new IllegalArgumentException("RDMA Append of size " + written +
                     " bytes is too large for segment with current file position at " + size.get());
-        int cur_size = size.getAndAdd(written);
-        assert(expected_pos == cur_size);
+        int curSize = size.getAndAdd(written);
+        assert expectedPos == curSize;
         return written;
     }
 
 
     // I think is thread safe as channel.size() only changed before closing.
-    public Long GetMaxPositionMayExtend() throws Exception{
+    public Long GetMaxPositionMayExtend() throws Exception {
        // Long size2 = channel.size();
         //Long pos = channel.position();
     //    System.out.println("Size " +  channel.size() + channel.toString() );
@@ -194,17 +193,17 @@ public class FileRecords extends AbstractRecords implements Closeable {
 
 
     public  MappedByteBuffer mmap(int len)  throws Exception {
-        return mmap(FileChannel.MapMode.READ_WRITE,0,len);
+        return mmap(FileChannel.MapMode.READ_WRITE, 0, len);
     }
 
-    public  MappedByteBuffer mmap(FileChannel.MapMode mode, int start, int len) throws Exception{
-        if(mbuf != null){
+    public  MappedByteBuffer mmap(FileChannel.MapMode mode, int start, int len) throws Exception {
+        if (mbuf != null) {
             return mbuf;
         }
-        synchronized (this){
-            if(!ismapped){
+        synchronized (this) {
+            if (!ismapped) {
                 ismapped = true;
-                mbuf=channel.map(mode, start, len);
+                mbuf = channel.map(mode, start, len);
             }
             return mbuf;
         }
@@ -223,7 +222,7 @@ public class FileRecords extends AbstractRecords implements Closeable {
     public void close() throws IOException {
         flush();
         trim();
-        if(ismapped){
+        if (ismapped) {
             mbuf = null;
             ismapped = false;
         }

@@ -19,16 +19,21 @@ package org.apache.kafka.common.requests;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.protocol.types.ArrayOf;
 import org.apache.kafka.common.protocol.types.Field;
 import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.utils.CollectionUtils;
 
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Optional;
 
-import static org.apache.kafka.common.protocol.CommonFields.*;
+import static org.apache.kafka.common.protocol.CommonFields.PARTITION_ID;
+import static org.apache.kafka.common.protocol.CommonFields.TOPIC_NAME;
+import static org.apache.kafka.common.protocol.CommonFields.CURRENT_LEADER_EPOCH;
 
 public class RDMAConsumeAddressRequest extends AbstractRequest {
 
@@ -137,11 +142,11 @@ public class RDMAConsumeAddressRequest extends AbstractRequest {
     }
 
     public static final class PartitionData {
-        public final long start_offset;
+        public final long startOffset;
         public final Optional<Integer> currentLeaderEpoch;
 
-        public PartitionData(long start_offset,Optional<Integer> currentLeaderEpoch) {
-            this.start_offset = start_offset;
+        public PartitionData(long startOffset, Optional<Integer> currentLeaderEpoch) {
+            this.startOffset = startOffset;
             this.currentLeaderEpoch = currentLeaderEpoch;
         }
 
@@ -152,7 +157,7 @@ public class RDMAConsumeAddressRequest extends AbstractRequest {
         @Override
         public String toString() {
             StringBuilder bld = new StringBuilder();
-            bld.append("{start_offset: ").append(start_offset).
+            bld.append("{start_offset: ").append(startOffset).
                     append(", currentLeaderEpoch: ").append(currentLeaderEpoch).
                     append("}");
             return bld.toString();
@@ -183,16 +188,16 @@ public class RDMAConsumeAddressRequest extends AbstractRequest {
             for (Object partitionResponseObj : topicResponse.get(PARTITIONS)) {
                 Struct partitionResponse = (Struct) partitionResponseObj;
                 int partition = partitionResponse.get(PARTITION_ID);
-                long start_offset = partitionResponse.get(START_OFFSET);
+                long startOffset = partitionResponse.get(START_OFFSET);
                 TopicPartition tp = new TopicPartition(topic, partition);
                 Optional<Integer> currentLeaderEpoch = RequestUtils.getLeaderEpoch(partitionResponse, CURRENT_LEADER_EPOCH);
-                PartitionData partitionData = new PartitionData(start_offset,currentLeaderEpoch);
+                PartitionData partitionData = new PartitionData(startOffset, currentLeaderEpoch);
                 fetchAddresses.put(tp, partitionData);
             }
         }
 
         toForget = new HashMap<>();
-        for (Object topicStructObj : struct.get(TOPICS_TO_FORGET)){
+        for (Object topicStructObj : struct.get(TOPICS_TO_FORGET)) {
             Struct topicStruct = (Struct) topicStructObj;
             String topic = topicStruct.get(TOPIC_NAME);
             for (Object partitionStructObj : topicStruct.get(FORGET_TOPICS_DATA)) {
@@ -212,14 +217,14 @@ public class RDMAConsumeAddressRequest extends AbstractRequest {
         short versionId = version();
 
         RDMAConsumeAddressResponse.PartitionData partitionError =
-                new RDMAConsumeAddressResponse.PartitionData(Errors.forException(e), 0,0,0,0,0,0,0,0,0,false, 0,0);
+                new RDMAConsumeAddressResponse.PartitionData(Errors.forException(e), 0, 0, 0, 0, 0, 0, 0, 0, 0, false, 0, 0);
         for (TopicPartition partition : fetchAddresses.keySet()) {
             responseData.put(partition, partitionError);
         }
 
         switch (version()) {
             case 0:
-                return new RDMAConsumeAddressResponse("",0,throttleTimeMs, responseData);
+                return new RDMAConsumeAddressResponse("", 0, throttleTimeMs, responseData);
             default:
                 throw new IllegalArgumentException(String.format("Version %d is not valid. Valid versions for %s are 0 to %d",
                         versionId, this.getClass().getSimpleName(), ApiKeys.CONSUMER_RDMA_REGISTER.latestVersion()));
@@ -261,7 +266,7 @@ public class RDMAConsumeAddressRequest extends AbstractRequest {
                 PartitionData offsetPartitionData = partitionEntry.getValue();
                 Struct partitionData = topicData.instance(PARTITIONS);
                 partitionData.set(PARTITION_ID, partitionEntry.getKey());
-                partitionData.set(START_OFFSET, offsetPartitionData.start_offset);
+                partitionData.set(START_OFFSET, offsetPartitionData.startOffset);
                 RequestUtils.setLeaderEpochIfExists(partitionData, CURRENT_LEADER_EPOCH,
                         offsetPartitionData.currentLeaderEpoch);
                 partitionArray.add(partitionData);

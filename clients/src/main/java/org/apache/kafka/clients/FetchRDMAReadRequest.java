@@ -16,10 +16,11 @@
  */
 package org.apache.kafka.clients;
 
-import com.ibm.disni.verbs.*;
+//import com.ibm.disni.verbs.*;
+import com.ibm.disni.verbs.IbvSendWR;
 import com.ibm.disni.verbs.IbvSendWR.Rdma;
+import com.ibm.disni.verbs.IbvSge;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.internals.Topic;
 
 import java.nio.ByteBuffer;
 import java.util.LinkedList;
@@ -37,7 +38,7 @@ public class FetchRDMAReadRequest implements RDMAWrBuilder {
     private TopicPartition topicPartition;
     public final long offset;
 
-    public FetchRDMAReadRequest(TopicPartition topicPartition, long offset, long remoteAddress,int rkey, int length, ByteBuffer targetBuffer, int lkey){
+    public FetchRDMAReadRequest(TopicPartition topicPartition, long offset, long remoteAddress, int rkey, int length, ByteBuffer targetBuffer, int lkey) {
         this.remoteAddress = remoteAddress;
         this.offset = offset;
         this.rkey = rkey;
@@ -47,7 +48,7 @@ public class FetchRDMAReadRequest implements RDMAWrBuilder {
         this.topicPartition = topicPartition;
     }
 
-    public TopicPartition getTopicPartition(){
+    public TopicPartition getTopicPartition() {
         return topicPartition;
     }
 
@@ -63,7 +64,7 @@ public class FetchRDMAReadRequest implements RDMAWrBuilder {
         sgeList.add(sgeSend);
 
 
-        IbvSendWR sendWR = new IbvSendWR( );
+        IbvSendWR sendWR = new IbvSendWR();
         //sendWR.setWr_id(1002);
         sendWR.setSg_list(sgeList);
         sendWR.setOpcode(IbvSendWR.IBV_WR_RDMA_READ);

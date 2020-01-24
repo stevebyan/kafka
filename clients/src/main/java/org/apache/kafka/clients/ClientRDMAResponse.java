@@ -17,11 +17,6 @@
 package org.apache.kafka.clients;
 
 import com.ibm.disni.verbs.IbvWC;
-import org.apache.kafka.common.errors.AuthenticationException;
-import org.apache.kafka.common.errors.UnsupportedVersionException;
-import org.apache.kafka.common.requests.AbstractResponse;
-import org.apache.kafka.common.requests.RequestHeader;
-import sun.nio.ch.DirectBuffer;
 
 import java.nio.ByteBuffer;
 
@@ -57,7 +52,9 @@ public class ClientRDMAResponse {
     }
 
 
-    public RDMAWrBuilder getRequest() { return request; }
+    public RDMAWrBuilder getRequest() {
+        return request;
+    }
 
     public String destination() {
         return destination;
@@ -72,7 +69,9 @@ public class ClientRDMAResponse {
         return responseBody != null;
     }
 
-    public int GetLength(){ return bodylen; }
+    public int GetLength() {
+        return bodylen;
+    }
 
     public void onComplete() {
         if (callback != null)

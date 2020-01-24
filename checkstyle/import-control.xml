@@ -162,6 +162,9 @@
 
   <subpackage name="clients">
     <allow pkg="org.slf4j" />
+    <allow pkg="com.ibm.disni.verbs" />
+    <allow pkg="org.apache.kafka.clients.consumer.internals.ConsumerRDMAClient" />
+    <allow pkg="org.apache.kafka.clients.producer.internals.ProducerBatch" />
     <allow pkg="org.apache.kafka.common" />
     <allow pkg="org.apache.kafka.clients" exact-match="true"/>
     <allow pkg="org.apache.kafka.test" />

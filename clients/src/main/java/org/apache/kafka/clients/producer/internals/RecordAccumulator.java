@@ -131,9 +131,8 @@ public final class RecordAccumulator {
                              ApiVersions apiVersions,
                              TransactionManager transactionManager,
                              BufferPool bufferPool) {
-        this(logContext,batchSize,compression,lingerMs,retryBackoffMs,deliveryTimeoutMs,
-                metrics,metricGrpName,time,apiVersions,transactionManager,bufferPool,null
-                );
+        this(logContext, batchSize, compression, lingerMs, retryBackoffMs, deliveryTimeoutMs,
+                metrics, metricGrpName, time, apiVersions, transactionManager, bufferPool, null);
     }
 
     public RecordAccumulator(LogContext logContext,
@@ -148,7 +147,7 @@ public final class RecordAccumulator {
                              ApiVersions apiVersions,
                              TransactionManager transactionManager,
                              BufferPool bufferPool,
-                             RdmaBufferPool rdmaBufferPool ) {
+                             RdmaBufferPool rdmaBufferPool) {
         this.log = logContext.logger(RecordAccumulator.class);
         this.drainIndex = 0;
         this.rdmaDrainIndex = 0;
@@ -178,8 +177,8 @@ public final class RecordAccumulator {
         this.time = time;
         this.apiVersions = apiVersions;
         this.transactionManager = transactionManager;
-        if(this.freerdma!=null)
-            this.rdmaSessionHandlers = new RdmaSessionHandlers(freerdma,rdmaBufferPool.tcpTimeout); // small hack. I did not want to introduce anotehr constructor
+        if (this.freerdma != null)
+            this.rdmaSessionHandlers = new RdmaSessionHandlers(freerdma, rdmaBufferPool.tcpTimeout); // small hack. I did not want to introduce anotehr constructor
         else
             this.rdmaSessionHandlers = null;
         registerMetrics(metrics, metricGrpName);
@@ -763,11 +762,10 @@ public final class RecordAccumulator {
         // Only deallocate the batch if it is not a split batch because split batch are allocated outside the
         // buffer pool.
         if (!batch.isSplitBatch())
-            if(batch.isRDMA()) {
-                assert (batch.buffer().capacity() == batch.initialCapacity());
+            if (batch.isRDMA()) {
+                assert batch.buffer().capacity() == batch.initialCapacity();
                 freerdma.deallocate(batch.buffer());
-            }
-            else {
+            } else {
                 free.deallocate(batch.buffer(), batch.initialCapacity());
             }
     }
@@ -994,7 +992,7 @@ public final class RecordAccumulator {
                 }
 
                 MemoryRecordsBuilder recordsBuilder = recordsBuilder(buffer, maxUsableMagic);
-                ProducerBatch batch = new ProducerBatch(tp, recordsBuilder, time.milliseconds(),false,true);
+                ProducerBatch batch = new ProducerBatch(tp, recordsBuilder, time.milliseconds(), false, true);
                 FutureRecordMetadata future = Utils.notNull(batch.tryAppend(timestamp, key, value, headers, callback, time.milliseconds()));
 
                 dq.addLast(batch);
@@ -1032,14 +1030,14 @@ public final class RecordAccumulator {
     }
 
 
-    public void updateAddresses(Map<TopicPartition, RDMAProduceAddressResponse.PartitionResponse> data){
+    public void updateAddresses(Map<TopicPartition, RDMAProduceAddressResponse.PartitionResponse> data) {
 
         rdmaSessionHandlers.updateAddresses(data);
     }
 
 
 
-    public  Map<Integer, List<ProduceRDMAWriteRequest>> drainRdma(Cluster cluster, Set<Node> nodes, int maxSize, long now,  Map<Node, RecordAccumulator.GetAddressRequestInfo> getAddressRequestInfoMap){
+    public  Map<Integer, List<ProduceRDMAWriteRequest>> drainRdma(Cluster cluster, Set<Node> nodes, int maxSize, long now,  Map<Node, RecordAccumulator.GetAddressRequestInfo> getAddressRequestInfoMap) {
 
 
         Map<Integer, List<ProduceRDMAWriteRequest>> batches = new HashMap<>();
@@ -1063,87 +1061,80 @@ public final class RecordAccumulator {
         /* to make starvation less likely this loop doesn't start at 0 */
         int start = rdmaDrainIndex = rdmaDrainIndex % parts.size();
         /* to make starvation less likely this loop doesn't start at 0 */
+        boolean stop = false;
         do {
             PartitionInfo part = parts.get(rdmaDrainIndex);
             TopicPartition tp = new TopicPartition(part.topic(), part.partition());
             this.rdmaDrainIndex = (this.rdmaDrainIndex + 1) % parts.size();
 
             // Only proceed if the partition has no in-flight batches.
-            if (isMuted(tp, now))
-                continue;
-
-            Deque<ProducerBatch> deque = getRdmaDeque(tp);
-            if (deque == null)
-                continue;
-
-            if(rdmaSessionHandlers.requiresAddressUpdate(tp,now)) {
-                GetAddressRequestInfo addrInfo =
-                        getAddressRequestInfoMap.computeIfAbsent(node, n -> new GetAddressRequestInfo(new ArrayList<>(), new ArrayList<>()));
-                addrInfo.unknownRdmaTopicPartitions.add(tp);
-                continue;
-            }
-
-            if(!rdmaSessionHandlers.isReady(tp)){
-                continue;
-            }
-
-            synchronized (deque) {
-                // invariant: !isMuted(tp,now) && deque != null
-                ProducerBatch first = deque.peekFirst();
-                if (first == null)
-                    continue;
-
-                if (!rdmaSessionHandlers.fitsBatch(tp, first)){
-                    if (rdmaSessionHandlers.canSendNewFileRequest(tp, now)) {
+            if (!isMuted(tp, now)) {
+                Deque<ProducerBatch> deque = getRdmaDeque(tp);
+                if (deque != null) {
+                    if (rdmaSessionHandlers.requiresAddressUpdate(tp, now)) {
                         GetAddressRequestInfo addrInfo =
                                 getAddressRequestInfoMap.computeIfAbsent(node, n -> new GetAddressRequestInfo(new ArrayList<>(), new ArrayList<>()));
-                        addrInfo.newFileRequired.add(tp);
+                        addrInfo.unknownRdmaTopicPartitions.add(tp);
+                    } else if (rdmaSessionHandlers.isReady(tp)) {
+                        synchronized (deque) {
+                            // invariant: !isMuted(tp,now) && deque != null
+                            ProducerBatch first = deque.peekFirst();
+                            if (first != null) {
+                                if (!rdmaSessionHandlers.fitsBatch(tp, first)) {
+                                    if (rdmaSessionHandlers.canSendNewFileRequest(tp, now)) {
+                                        GetAddressRequestInfo addrInfo =
+                                                getAddressRequestInfoMap.computeIfAbsent(node, n -> new GetAddressRequestInfo(new ArrayList<>(), new ArrayList<>()));
+                                        addrInfo.newFileRequired.add(tp);
+                                    }
+                                } else {
+
+                                    // first != null
+                                    boolean backoff = first.attempts() > 0 && first.waitedTimeMs(now) < retryBackoffMs;
+
+                                    // Only drain the batch if it is not during backoff period.
+                                    if (!backoff) {
+                                        if (size + first.estimatedSizeInBytes() > maxSize && !ready.isEmpty()) {
+                                            stop = true;
+                                        } else if (shouldStopDrainBatchesForPartition(first, tp)) {
+                                            stop = true;
+                                        } else {
+                                            size = drainBatch(now, size, ready, tp, deque);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
-                    continue;
-                }
-
-                    // first != null
-                boolean backoff = first.attempts() > 0 && first.waitedTimeMs(now) < retryBackoffMs;
-
-                // Only drain the batch if it is not during backoff period.
-                if (backoff)
-                    continue;
-
-                if (size + first.estimatedSizeInBytes() > maxSize && !ready.isEmpty()) {
-
-                    break;
-                } else {
-                    if (shouldStopDrainBatchesForPartition(first, tp))
-                        break;
-
-                    boolean isTransactional = transactionManager != null && transactionManager.isTransactional();
-                    ProducerIdAndEpoch producerIdAndEpoch =
-                            transactionManager != null ? transactionManager.producerIdAndEpoch() : null;
-                    ProducerBatch batch = deque.pollFirst();
-                    if (producerIdAndEpoch != null && !batch.hasSequence()) {
-
-                        batch.setProducerState(producerIdAndEpoch, transactionManager.sequenceNumber(batch.topicPartition), isTransactional);
-                        transactionManager.incrementSequenceNumber(batch.topicPartition, batch.recordCount);
-                        log.debug("Assigned producerId {} and producerEpoch {} to batch with base sequence " +
-                                        "{} being sent to partition {}", producerIdAndEpoch.producerId,
-                                producerIdAndEpoch.epoch, batch.baseSequence(), tp);
-
-                        transactionManager.addInFlightBatch(batch);
-                    }
-                    batch.close();
-                    size += batch.records().sizeInBytes();
-
-                    ProduceRDMAWriteRequest req = rdmaSessionHandlers.createRequest(tp,batch);
-
-                    ready.add(req);
-                    batch.drained(now);
                 }
             }
-        } while (start != rdmaDrainIndex);
+        } while (start != rdmaDrainIndex && !stop);
 
         return ready;
     }
 
+    private int drainBatch(long now, int size, List<ProduceRDMAWriteRequest> ready, TopicPartition tp, Deque<ProducerBatch> deque) {
+        boolean isTransactional = transactionManager != null && transactionManager.isTransactional();
+        ProducerIdAndEpoch producerIdAndEpoch =
+                transactionManager != null ? transactionManager.producerIdAndEpoch() : null;
+        ProducerBatch batch = deque.pollFirst();
+        if (producerIdAndEpoch != null && !batch.hasSequence()) {
+            batch.setProducerState(producerIdAndEpoch, transactionManager.sequenceNumber(batch.topicPartition), isTransactional);
+            transactionManager.incrementSequenceNumber(batch.topicPartition, batch.recordCount);
+            log.debug("Assigned producerId {} and producerEpoch {} to batch with base sequence " +
+                            "{} being sent to partition {}", producerIdAndEpoch.producerId,
+                    producerIdAndEpoch.epoch, batch.baseSequence(), tp);
+
+            transactionManager.addInFlightBatch(batch);
+        }
+        batch.close();
+        size += batch.records().sizeInBytes();
+
+        ProduceRDMAWriteRequest req = rdmaSessionHandlers.createRequest(tp, batch);
+
+        ready.add(req);
+        batch.drained(now);
+        return size;
+    }
 
 
 }

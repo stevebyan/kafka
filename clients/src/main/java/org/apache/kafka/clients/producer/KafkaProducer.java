@@ -30,12 +30,25 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.apache.kafka.clients.*;
+import org.apache.kafka.clients.Metadata;
+import org.apache.kafka.clients.ApiVersions;
+import org.apache.kafka.clients.KafkaClient;
+import org.apache.kafka.clients.RdmaClient;
+import org.apache.kafka.clients.ExclusiveRdmaClient;
+import org.apache.kafka.clients.ClientUtils;
+import org.apache.kafka.clients.NetworkClient;
+import org.apache.kafka.clients.ClientDnsLookup;
+import org.apache.kafka.clients.producer.internals.BufferPool;
+import org.apache.kafka.clients.producer.internals.RdmaBufferPool;
+import org.apache.kafka.clients.producer.internals.RecordAccumulator;
+import org.apache.kafka.clients.producer.internals.Sender;
+import org.apache.kafka.clients.producer.internals.ProducerInterceptors;
+import org.apache.kafka.clients.producer.internals.TransactionManager;
+import org.apache.kafka.clients.producer.internals.TransactionalRequestResult;
+import org.apache.kafka.clients.producer.internals.ProducerMetrics;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetCommitCallback;
-import org.apache.kafka.clients.consumer.internals.ConsumerRDMAClient;
-import org.apache.kafka.clients.producer.internals.*;
 import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Metric;
@@ -385,20 +398,20 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             int deliveryTimeoutMs = configureDeliveryTimeout(config, log);
 
 
-            int maxSendSize =config.getInt(ProducerConfig.RDMA_SEND_SIZE);
+            int maxSendSize = config.getInt(ProducerConfig.RDMA_SEND_SIZE);
             int maxReceiveSize = config.getInt(ProducerConfig.RDMA_RECV_SIZE);
-            int requestQuota =config.getInt(ProducerConfig.RDMA_QUOTA_SIZE);
-            int compeltionQueueSize =config.getInt(ProducerConfig.RDMA_QUEUE_SIZE);
+            int requestQuota = config.getInt(ProducerConfig.RDMA_QUOTA_SIZE);
+            int completionQueueSize = config.getInt(ProducerConfig.RDMA_QUEUE_SIZE);
             int wcBatch = config.getInt(ProducerConfig.WC_BATCH);
             int contentedLimit = config.getInt(ProducerConfig.RDMA_CONTENTION_LIMIT);
             long tcpTimeout = config.getLong(ProducerConfig.TCP_TIMEOUT);
             int cacheSize = config.getInt(ProducerConfig.RDMA_CACHE_SIZE);
 
 
-            RdmaClient rdmaNetwork = new ExclusiveRdmaClient(clientId,logContext,new RdmaClient.RDMAQPparams(maxSendSize,maxReceiveSize),
-                    requestQuota,compeltionQueueSize,wcBatch,contentedLimit);
+            RdmaClient rdmaNetwork = new ExclusiveRdmaClient(clientId, logContext, new RdmaClient.RDMAQPparams(maxSendSize, maxReceiveSize),
+                    requestQuota, completionQueueSize, wcBatch, contentedLimit);
 //
-            RdmaBufferPool rdmapool = new RdmaBufferPool(cacheSize, time, rdmaNetwork,tcpTimeout);
+            RdmaBufferPool rdmapool = new RdmaBufferPool(cacheSize, time, rdmaNetwork, tcpTimeout);
 
             this.apiVersions = new ApiVersions();
             this.accumulator = new RecordAccumulator(logContext,
@@ -443,11 +456,11 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         }
     }
 
-    Sender newSender(LogContext logContext, KafkaClient kafkaClient, Metadata metadata ) {
-        return  newSender(logContext, kafkaClient, metadata,null );
+    Sender newSender(LogContext logContext, KafkaClient kafkaClient, Metadata metadata) {
+        return newSender(logContext, kafkaClient, metadata, null);
     }
     // visible for testing
-    Sender newSender(LogContext logContext, KafkaClient kafkaClient, Metadata metadata,RdmaClient rdmaClient) {
+    Sender newSender(LogContext logContext, KafkaClient kafkaClient, Metadata metadata, RdmaClient rdmaClient) {
         int maxInflightRequests = configureInflightRequests(producerConfig, transactionManager != null);
         int requestTimeoutMs = producerConfig.getInt(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG);
         ChannelBuilder channelBuilder = ClientUtils.createChannelBuilder(producerConfig, time);
@@ -485,7 +498,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                 requestTimeoutMs,
                 producerConfig.getLong(ProducerConfig.RETRY_BACKOFF_MS_CONFIG),
                 this.transactionManager,
-                apiVersions,rdmaClient);
+                apiVersions, rdmaClient);
     }
 
     private static int lingerMs(ProducerConfig config) {
@@ -888,31 +901,12 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             throwIfProducerClosed();
             // first make sure the metadata for the topic is available
             ClusterAndWaitTime clusterAndWaitTime;
-            try {
-                clusterAndWaitTime = waitOnMetadata(record.topic(), record.partition(), maxBlockTimeMs);
-            } catch (KafkaException e) {
-                if (metadata.isClosed())
-                    throw new KafkaException("Producer closed while send in progress", e);
-                throw e;
-            }
+            clusterAndWaitTime = getClusterAndWaitTime(record);
             long remainingWaitMs = Math.max(0, maxBlockTimeMs - clusterAndWaitTime.waitedOnMetadataMs);
             Cluster cluster = clusterAndWaitTime.cluster;
-            byte[] serializedKey;
-            try {
-                serializedKey = keySerializer.serialize(record.topic(), record.headers(), record.key());
-            } catch (ClassCastException cce) {
-                throw new SerializationException("Can't convert key of class " + record.key().getClass().getName() +
-                        " to class " + producerConfig.getClass(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG).getName() +
-                        " specified in key.serializer", cce);
-            }
-            byte[] serializedValue;
-            try {
-                serializedValue = valueSerializer.serialize(record.topic(), record.headers(), record.value());
-            } catch (ClassCastException cce) {
-                throw new SerializationException("Can't convert value of class " + record.value().getClass().getName() +
-                        " to class " + producerConfig.getClass(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG).getName() +
-                        " specified in value.serializer", cce);
-            }
+
+            byte[] serializedKey = getSerializedKey(record);
+            byte[] serializedValue = getSerializedValue(record);
             int partition = partition(record, serializedKey, serializedValue, cluster);
             tp = new TopicPartition(record.topic(), partition);
 
@@ -930,9 +924,9 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             if (transactionManager != null && transactionManager.isTransactional())
                 transactionManager.maybeAddPartitionToTransaction(tp);
 
-            RecordAccumulator.RecordAppendResult result = (withRdma) ?   accumulator.RDMAappend(tp, timestamp, serializedKey,
-                                                                         serializedValue, headers, interceptCallback, remainingWaitMs)
-                                                                        : accumulator.append(tp, timestamp, serializedKey,
+            RecordAccumulator.RecordAppendResult result = withRdma ? accumulator.RDMAappend(tp, timestamp, serializedKey,
+                                                                        serializedValue, headers, interceptCallback, remainingWaitMs)
+                                                                   : accumulator.append(tp, timestamp, serializedKey,
                                                                         serializedValue, headers, interceptCallback, remainingWaitMs);
 
 
@@ -970,6 +964,42 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             this.interceptors.onSendError(record, tp, e);
             throw e;
         }
+    }
+
+    private byte[] getSerializedValue(ProducerRecord<K, V> record) {
+        byte[] serializedValue;
+        try {
+            serializedValue = valueSerializer.serialize(record.topic(), record.headers(), record.value());
+        } catch (ClassCastException cce) {
+            throw new SerializationException("Can't convert value of class " + record.value().getClass().getName() +
+                    " to class " + producerConfig.getClass(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG).getName() +
+                    " specified in value.serializer", cce);
+        }
+        return serializedValue;
+    }
+
+    private byte[] getSerializedKey(ProducerRecord<K, V> record) {
+        byte[] serializedKey;
+        try {
+            serializedKey = keySerializer.serialize(record.topic(), record.headers(), record.key());
+        } catch (ClassCastException cce) {
+            throw new SerializationException("Can't convert key of class " + record.key().getClass().getName() +
+                    " to class " + producerConfig.getClass(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG).getName() +
+                    " specified in key.serializer", cce);
+        }
+        return serializedKey;
+    }
+
+    private ClusterAndWaitTime getClusterAndWaitTime(ProducerRecord<K, V> record) throws InterruptedException {
+        ClusterAndWaitTime clusterAndWaitTime;
+        try {
+            clusterAndWaitTime = waitOnMetadata(record.topic(), record.partition(), maxBlockTimeMs);
+        } catch (KafkaException e) {
+            if (metadata.isClosed())
+                throw new KafkaException("Producer closed while send in progress", e);
+            throw e;
+        }
+        return clusterAndWaitTime;
     }
 
     private void setReadOnly(Headers headers) {

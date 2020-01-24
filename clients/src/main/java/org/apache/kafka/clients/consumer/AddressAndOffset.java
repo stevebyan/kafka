@@ -39,8 +39,8 @@ public final class AddressAndOffset {
 
         this.offset = offset;
         this.address = address;
-        this.rkey=rkey;
-        this.length=length;
+        this.rkey = rkey;
+        this.length = length;
         this.leaderEpoch = leaderEpoch;
     }
 

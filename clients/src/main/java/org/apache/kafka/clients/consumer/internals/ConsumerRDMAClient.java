@@ -16,15 +16,17 @@
  */
 package org.apache.kafka.clients.consumer.internals;
 
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-import com.ibm.disni.RdmaEndpoint;
-import com.ibm.disni.RdmaPassiveEndpointGroup;
-import com.ibm.disni.verbs.*;
-import org.apache.kafka.clients.*;
+import com.ibm.disni.verbs.IbvMr;
+
+import org.apache.kafka.clients.RdmaClient;
+import org.apache.kafka.clients.RDMARequestCompletionHandler;
+import org.apache.kafka.clients.RDMAWrBuilder;
+import org.apache.kafka.clients.ClientRDMARequest;
+import org.apache.kafka.clients.ClientRDMAResponse;
+
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Timer;
@@ -42,28 +44,28 @@ public class ConsumerRDMAClient   {
     private final ConcurrentLinkedQueue<RequestFutureCompletionHandler> pendingCompletion = new ConcurrentLinkedQueue<>();
 
 
-    public boolean isConnected(Node node){
+    public boolean isConnected(Node node) {
         return rdmaClient.isConnected(node);
     }
 
 
-    public void tryConnect(int id, String hostname, int port){
-        Node node = new Node(id,hostname,port);
+    public void tryConnect(int id, String hostname, int port) {
+        Node node = new Node(id, hostname,port);
         try {
             rdmaClient.connect(node);
-        }catch(Exception e) {
+        } catch (Exception e) {
             System.out.println("Uncaught exception during tryConnect");
         }
     }
 
-    public ConsumerRDMAClient(RdmaClient rdmaClient,String clientId,Time time){
+    public ConsumerRDMAClient(RdmaClient rdmaClient, String clientId, Time time) {
         this.rdmaClient = rdmaClient;
         this.clientId = clientId;
         this.time = time;
         this.maxPollTimeoutMs = MAX_POLL_TIMEOUT_MS;
     }
 
-    public ConsumerRDMAClient(RdmaClient rdmaClient,String clientId,Time time, int maxPollTimeoutMs){
+    public ConsumerRDMAClient(RdmaClient rdmaClient, String clientId, Time time, int maxPollTimeoutMs) {
         this.rdmaClient = rdmaClient;
         this.clientId = clientId;
         this.time = time;
@@ -74,7 +76,7 @@ public class ConsumerRDMAClient   {
         IbvMr mr = null;
         try {
             mr = rdmaClient.MemReg(buf);
-        }catch(Exception e){
+        } catch (Exception e) {
             System.out.println("Uncaught exception");
         }
         return mr;
@@ -85,8 +87,8 @@ public class ConsumerRDMAClient   {
     public RequestFuture<ClientRDMAResponse> send(String nodeid, RDMAWrBuilder requestBuilder) {
         RequestFutureCompletionHandler completionHandler = new RequestFutureCompletionHandler();
         long now = time.nanoseconds();
-        ClientRDMARequest clientRequest =  rdmaClient.newClientRdmaRequest(nodeid,  requestBuilder, now, 10000,true,false, completionHandler);
-        rdmaClient.send(clientRequest,time.milliseconds());
+        ClientRDMARequest clientRequest = rdmaClient.newClientRdmaRequest(nodeid, requestBuilder, now, 10000, true, false, completionHandler);
+        rdmaClient.send(clientRequest, time.milliseconds());
 
         return completionHandler.future;
     }

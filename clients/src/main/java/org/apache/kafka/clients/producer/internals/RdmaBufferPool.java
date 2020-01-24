@@ -71,8 +71,8 @@ public class RdmaBufferPool {
         this.defaultSegmentSize = defaultSegmentSize;
         this.time = time;
         this.rdmaClient = rdmaClient;
-        RdmaSegment segment = new RdmaSegment(defaultSegmentSize,rdmaClient);
-        segments.put(segment.getStartAddress() ,segment);
+        RdmaSegment segment = new RdmaSegment(defaultSegmentSize, rdmaClient);
+        segments.put(segment.getStartAddress(), segment);
         numberOfSegments = new AtomicInteger(1);
         this.tcpTimeout = tcpTimeout;
     }
@@ -90,37 +90,37 @@ public class RdmaBufferPool {
      */
     public ByteBuffer allocate(int size, long maxTimeToBlockMs) throws InterruptedException {
         ByteBuffer buffer = null;
-        do{
+        do {
             int num = numberOfSegments.get();
-            for (ConcurrentSkipListMap.Entry<Long,RdmaSegment> entry : segments.entrySet()) {
+            for (ConcurrentSkipListMap.Entry<Long, RdmaSegment> entry : segments.entrySet()) {
                 RdmaSegment segment = entry.getValue();
-                buffer = segment.allocate(size,maxTimeToBlockMs);
-                if(buffer!=null)
+                buffer = segment.allocate(size, maxTimeToBlockMs);
+                if (buffer != null)
                     return buffer;
             }
 
             lock.lock();
-            try{
+            try {
                 int newnum = numberOfSegments.get();
-                if(newnum==num){
+                if (newnum == num) {
                    // System.out.println("allocate new buffer");
-                    RdmaSegment segment = new RdmaSegment(defaultSegmentSize,rdmaClient);
-                    buffer = segment.allocate(size,maxTimeToBlockMs);
-                    segments.put(segment.getStartAddress() ,segment);
+                    RdmaSegment segment = new RdmaSegment(defaultSegmentSize, rdmaClient);
+                    buffer = segment.allocate(size, maxTimeToBlockMs);
+                    segments.put(segment.getStartAddress(), segment);
                     numberOfSegments.incrementAndGet();
-                } else{
+                } else {
                     System.out.println("RETRY to allocate");
                 }
-            }  finally {
+            } finally {
                 lock.unlock();
             }
-        } while(buffer==null);
+        } while (buffer == null);
 
         return buffer;
     }
 
     public int getLkey(ByteBuffer buffer) {
-        long address =  ((DirectBuffer)buffer).address();
+        long address = ((DirectBuffer) buffer).address();
 
         RdmaSegment segment = segments.floorEntry(address).getValue();
         return segment.getLkey();
@@ -129,7 +129,7 @@ public class RdmaBufferPool {
 
 
     public void deallocate(ByteBuffer buffer) {
-        long address =  ((DirectBuffer)buffer).address();
+        long address = ((DirectBuffer) buffer).address();
         RdmaSegment segment = segments.floorEntry(address).getValue();
         segment.deallocate(buffer);
     }
@@ -140,7 +140,7 @@ public class RdmaBufferPool {
      * The number of threads blocked waiting on memory
      */
     public int queued() {
-         return 0;
+        return 0;
     }
 
 
@@ -149,7 +149,7 @@ public class RdmaBufferPool {
      * The total memory managed by this pool
      */
     public long totalMemory() {
-        return defaultSegmentSize*this.segments.size();
+        return defaultSegmentSize * this.segments.size();
     }
 
 }
@@ -180,13 +180,13 @@ class RdmaSegment {
     }
 
 
-    public long getStartAddress(){
+    public long getStartAddress() {
         return startAddress;
     }
 
     public RdmaSegment(int memory, RdmaClient rdmaClient) {
         this.memory = allocateByteBuffer(memory);
-        this.startAddress = ((DirectBuffer)this.memory).address();
+        this.startAddress = ((DirectBuffer) this.memory).address();
         this.endAddress = startAddress + memory;
         this.currentAddress = this.startAddress;
 
@@ -201,7 +201,7 @@ class RdmaSegment {
         this.free = new TreeSet<>(new Comparator<DirectBuffer>() {
             @Override
             public int compare(DirectBuffer o1, DirectBuffer o2) {
-                return Long.compare(o1.address(),o2.address()) ;
+                return Long.compare(o1.address(), o2.address());
             }
         });
     }
@@ -215,15 +215,15 @@ class RdmaSegment {
         ByteBuffer buffer = null;
         this.lock.lock();
         try {
-            if(expectedFreeSize < size){
+            if (expectedFreeSize < size) {
                 return null;
             }
 
-            if(currentAddress + size > endAddress){
+            if (currentAddress + size > endAddress) {
                 //wrap around
-                int position = (int)(currentAddress - startAddress);
-                int length = (int)(lastFreeByte - currentAddress);
-                if(length>0) {
+                int position = (int) (currentAddress - startAddress);
+                int length = (int) (lastFreeByte - currentAddress);
+                if (length > 0) {
                     ByteBuffer lastbuffer = ((ByteBuffer) memory.duplicate().position(position).limit(position + length)).slice();
                     this.free.add((DirectBuffer) lastbuffer);
                 }
@@ -231,31 +231,31 @@ class RdmaSegment {
                 lastFreeByte = startAddress;
             }
 
-            if((lastFreeByte-currentAddress) < size){
+            if ((lastFreeByte - currentAddress) < size) {
                 // not enough memory
                 //need to deallocate
-                while( !free.isEmpty()){
+                while (!free.isEmpty()) {
                     DirectBuffer buf = free.first();
-                    if(buf.address() == lastFreeByte){
-                        lastFreeByte+=((ByteBuffer)buf).capacity();
+                    if (buf.address() == lastFreeByte) {
+                        lastFreeByte += ((ByteBuffer) buf).capacity();
                         free.pollFirst();
-                    }else{
+                    } else {
                         break;
                     }
                 }
             }
 
-            if((lastFreeByte-currentAddress) >= size) {
+            if ((lastFreeByte-currentAddress) >= size) {
                 int position = (int) (currentAddress - startAddress);
                 buffer = ((ByteBuffer) memory.duplicate().position(position).limit(position + size)).slice();
                 currentAddress += size;
-            }else{
+            } else {
                // System.out.println("No memory in buffer " + startAddress);
             }
 
         } finally {
-            if(buffer!=null){
-                expectedFreeSize-=buffer.capacity();
+            if (buffer != null) {
+                expectedFreeSize -= buffer.capacity();
             }
             lock.unlock();
         }
@@ -276,10 +276,9 @@ class RdmaSegment {
             this.mr = rdmaClient.MemReg(memory);
             this.lkey = mr.getLkey();
             return lkey;
-        } catch(Exception e){
+        } catch(Exception e) {
             System.out.println("Uncaught memory allocation error");
-        }
-        finally{
+        } finally {
             lock.unlock();
         }
         return -1;
@@ -291,7 +290,7 @@ class RdmaSegment {
         lock.lock();
         try {
             buffer.clear();
-            expectedFreeSize+=buffer.capacity();
+            expectedFreeSize += buffer.capacity();
             this.free.add((DirectBuffer) buffer);
         } finally {
             lock.unlock();

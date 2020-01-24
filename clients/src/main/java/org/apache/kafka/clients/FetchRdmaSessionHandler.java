@@ -27,24 +27,26 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.RDMAConsumeAddressResponse;
 import org.apache.kafka.common.utils.LogContext;
-import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.LinkedList;
+import java.util.TreeSet;
 
 
-class SlotSegment{
+class SlotSegment {
     public final TopicPartition tp;
     public final long baseOffset;
-    public SlotSegment(TopicPartition tp,long baseOffset){
-        this.tp =tp;
-        this.baseOffset =baseOffset;
+    public SlotSegment(TopicPartition tp, long baseOffset) {
+        this.tp = tp;
+        this.baseOffset = baseOffset;
     }
 
     @Override
     public int hashCode() {
-         return (int)(31 * baseOffset + tp.hashCode());
+        return (int) (31 * baseOffset + tp.hashCode());
     }
 
     @Override
@@ -83,11 +85,11 @@ public class FetchRdmaSessionHandler {
     private final boolean withSlots;
     private   ByteBuffer bufferForSlots;
     private   IbvMr slotMr;
-    private   long slotAddress=-1;
-    private   long slotEnd=-1;
-    private   int slotRkey=-1;
-    private   long lastRdmaUpdate=0L;
-    private   int hasPendingRdmaSlotRequest=0;
+    private   long slotAddress = -1;
+    private   long slotEnd = -1;
+    private   int slotRkey = -1;
+    private   long lastRdmaUpdate = 0L;
+    private   int hasPendingRdmaSlotRequest = 0;
     private LinkedHashMap<Long, SlotSegment> addressToSlotSegment =
             new LinkedHashMap<>(0);
 
@@ -102,128 +104,129 @@ public class FetchRdmaSessionHandler {
 
 
 
-    public FetchRdmaSessionHandler(LogContext logContext, int node,ConsumerRDMAClient rdmaClient,
+    public FetchRdmaSessionHandler(LogContext logContext, int node, ConsumerRDMAClient rdmaClient,
                                    int fetchSize, int cacheSize, int wrapAroundLimit, boolean withSlots,
                                    long frequencyOfRdmaUpdate, long addressUpdateTimeoutInMs) {
         this.log = logContext.logger(FetchRdmaSessionHandler.class);
         this.node = node;
         this.rdmaClient = rdmaClient;
-        this.bufferForSlots = ByteBuffer.allocateDirect(40*50);
+        this.bufferForSlots = ByteBuffer.allocateDirect(40 * 50);
         this.slotMr = null;
         this.fetchSize = fetchSize;
         this.withSlots = withSlots;
         this.cacheSize = cacheSize;
         this.wrapAroundLimit =  wrapAroundLimit;
         this.frequencyOfRdmaUpdate = frequencyOfRdmaUpdate;
-        this.addressUpdateTimeoutInMs=addressUpdateTimeoutInMs;
+        this.addressUpdateTimeoutInMs = addressUpdateTimeoutInMs;
 
     }
 
 
-    public FetchRdmaRequestData handleResponse(ClientRDMAResponse response){
+    public FetchRdmaRequestData handleResponse(ClientRDMAResponse response) {
 
         RDMAWrBuilder temp = response.getRequest();
 
-        FetchRDMAReadRequest request = (FetchRDMAReadRequest)temp;
+        FetchRDMAReadRequest request = (FetchRDMAReadRequest) temp;
         TopicPartition tp = request.getTopicPartition();
 
 
         FetchRdmaRequestData handler = sessionPartitions.get(tp);
 
-        CompletedRdmaFetch fetch = new CompletedRdmaFetch(request.remoteAddress,request.length,response.responseBody());
+        CompletedRdmaFetch fetch = new CompletedRdmaFetch(request.remoteAddress, request.length, response.responseBody());
         handler.addFetch(fetch);
 
         return handler;
     }
 
-    public void handleError(Exception e){
+    public void handleError(Exception e) {
         //empty
         System.out.println("Error" + e);
         //todo
     }
 
 
-    public boolean requiresUpdatePartition(TopicPartition partition, IsolationLevel isolationLevel, long nowNanos){
-        if(!sessionPartitions.containsKey(partition)) {
-            sessionPartitions.put(partition,new FetchRdmaRequestData(partition,rdmaClient,nowNanos,fetchSize,
-                                               cacheSize, wrapAroundLimit, withSlots,addressUpdateTimeoutInMs) );
+    public boolean requiresUpdatePartition(TopicPartition partition, IsolationLevel isolationLevel, long nowNanos) {
+        if (!sessionPartitions.containsKey(partition)) {
+            sessionPartitions.put(partition, 
+                                  new FetchRdmaRequestData(partition, rdmaClient, nowNanos, fetchSize,
+                                                           cacheSize, wrapAroundLimit, withSlots, addressUpdateTimeoutInMs));
             return true;
         }
 
-        return sessionPartitions.get(partition).requiresUpdate(isolationLevel,nowNanos);
+        return sessionPartitions.get(partition).requiresUpdate(isolationLevel, nowNanos);
     }
 
-    public long getBaseOffsetToForget(TopicPartition partition){
-        long toForget =  sessionPartitions.get(partition).getBaseOffsetToForget( );
-        if(withSlots && toForget >=0){
+    public long getBaseOffsetToForget(TopicPartition partition) {
+        long toForget = sessionPartitions.get(partition).getBaseOffsetToForget();
+        if (withSlots && toForget >= 0) {
             // TODO can be optimized
-            addressToSlotSegment.values().remove(new SlotSegment(partition,toForget));
+            addressToSlotSegment.values().remove(new SlotSegment(partition, toForget));
         }
         return toForget;
     }
 
 
 
-    public boolean requiresRdmaUpdatePartition(TopicPartition tp, IsolationLevel isolationLevel,  long nowNanos){
+    public boolean requiresRdmaUpdatePartition(TopicPartition tp, IsolationLevel isolationLevel,  long nowNanos) {
 
-        boolean needUpdate = (withSlots) && ( this.slotRkey != -1 && hasPendingRdmaSlotRequest == 0 &&
+        boolean needUpdate = withSlots && (this.slotRkey != -1 && hasPendingRdmaSlotRequest == 0 &&
                              (nowNanos - lastRdmaUpdate > frequencyOfRdmaUpdate) &&
                              sessionPartitions.get(tp).requiresRdmaUpdate(isolationLevel));
-        if(needUpdate){
+        if (needUpdate) {
             lastRdmaUpdate = nowNanos;
         }
         return  needUpdate;
     }
 
-    public RDMAWrBuilder getRdmaUpdateRequest(){
-        if(!withSlots){
+    public RDMAWrBuilder getRdmaUpdateRequest() {
+        if (!withSlots) {
             System.out.println("Error. Slots has been disabled but getRdmaUpdateRequest is called");
         }
-        int length = (int)(slotEnd-slotAddress);
-        if(this.slotMr == null){
+        int length = (int) (slotEnd - slotAddress);
+        if (this.slotMr == null) {
             this.slotMr = rdmaClient.MemReg(bufferForSlots);
         }
         hasPendingRdmaSlotRequest = 1;
-        return new FetchRDMASlotRequest(slotAddress,slotRkey,length,bufferForSlots,slotMr.getLkey());
+        return new FetchRDMASlotRequest(slotAddress, slotRkey, length, bufferForSlots, slotMr.getLkey());
     }
 
 
-    public boolean isReady(TopicPartition partition){
+    public boolean isReady(TopicPartition partition) {
         return sessionPartitions.get(partition).isReady();
     }
 
 
-    public RDMAWrBuilder getFetchRequestForPartiton(TopicPartition partition, IsolationLevel isolationLevel, long offset){
+    public RDMAWrBuilder getFetchRequestForPartiton(TopicPartition partition, IsolationLevel isolationLevel, long offset) {
         return sessionPartitions.get(partition).getFetchRequest(isolationLevel);
     }
 
 
-    public   void updateAllMetadata(ClientRDMAResponse response){
+    public void updateAllMetadata(ClientRDMAResponse response) {
         hasPendingRdmaSlotRequest = 0;
 
         ByteBuffer buffer = response.responseBody();
         int length = response.GetLength();
 
-        for(int offset = 0; offset<length; offset +=40 ){ // TODO 40 is SlotSize
+        for (int offset = 0; offset < length; offset += 40) { // TODO 40 is SlotSize
             long address = slotAddress + offset;
 
-            SlotSegment ss = addressToSlotSegment.getOrDefault(address,null);
-            if(ss!=null){
-                ByteBuffer slot = ((ByteBuffer)(buffer.duplicate().position(offset).limit(offset+40))).slice(); // TODO 40 is SlotSize
-                sessionPartitions.get(ss.tp).updateMetadata(ss.baseOffset,slot);
+            SlotSegment ss = addressToSlotSegment.getOrDefault(address, null);
+            if (ss != null) {
+                ByteBuffer slot = ((ByteBuffer) (buffer.duplicate().position(offset).limit(offset + 40))).slice(); // TODO 40 is SlotSize
+                sessionPartitions.get(ss.tp).updateMetadata(ss.baseOffset, slot);
             }
         }
     }
 
-    public   void updateMetadata(Map<TopicPartition, RDMAConsumeAddressResponse.PartitionData> update){
+    public void updateMetadata(Map<TopicPartition, RDMAConsumeAddressResponse.PartitionData> update) {
 
-        for (Map.Entry<TopicPartition, RDMAConsumeAddressResponse.PartitionData> entry : update.entrySet()){
-            updateMetadata(entry.getKey(),entry.getValue());
+        for (Map.Entry<TopicPartition, RDMAConsumeAddressResponse.PartitionData> entry : update.entrySet()) {
+            updateMetadata(entry.getKey(), entry.getValue());
         }
     }
 
-    private void updateMetadata(TopicPartition partition, RDMAConsumeAddressResponse.PartitionData memoryData){
-        if(withSlots && memoryData.slotRkey != -1 && memoryData.slotAddress > 0L) {
+    private void updateMetadata(TopicPartition partition, RDMAConsumeAddressResponse.PartitionData memoryData) {
+        if (withSlots && memoryData.slotRkey != -1 && memoryData.slotAddress > 0L) {
             if (this.slotRkey == -1) {
                 this.slotAddress = memoryData.slotAddress;
                 this.slotEnd = memoryData.slotAddress + 40; // TODO 40 is SlotSize
@@ -231,22 +234,22 @@ public class FetchRdmaSessionHandler {
             } else {
                 this.slotAddress = Math.min(memoryData.slotAddress, this.slotAddress);
                 this.slotEnd = Math.max(memoryData.slotAddress + 40, this.slotEnd); // TODO 40 is SlotSize
-                assert (this.slotRkey == memoryData.slotRkey);
+                assert this.slotRkey == memoryData.slotRkey;
             }
 
-            addressToSlotSegment.putIfAbsent( memoryData.slotAddress,new SlotSegment(partition, memoryData.baseOffset));
+            addressToSlotSegment.putIfAbsent(memoryData.slotAddress, new SlotSegment(partition, memoryData.baseOffset));
 
         }
 
         sessionPartitions.get(partition).updateMetadata(memoryData);
     }
 
-    public static class CompletedRdmaFetch implements Comparable<CompletedRdmaFetch>{
+    public static class CompletedRdmaFetch implements Comparable<CompletedRdmaFetch> {
         public final long startAddress;
         public final long length;
         public final ByteBuffer buffer; // for debugging
 
-        public CompletedRdmaFetch(long startAddress,long length,ByteBuffer buffer){
+        public CompletedRdmaFetch(long startAddress, long length, ByteBuffer buffer) {
             this.startAddress = startAddress;
             this.length = length;
             this.buffer = buffer;
@@ -260,24 +263,24 @@ public class FetchRdmaSessionHandler {
     }
 
 
-    public static class Segment{
+    public static class Segment {
         // offsets in Kafka terms
 
         public final long fetchBaseOffset;
         public final int rkey;
-        public final long startAddress ;
+        public final long startAddress;
 
 
-        public long currentOffsetPosition ; // offset in bytes
-        public long lastRequestedOffsetPosition ;// offset in bytes
-        public long currentHighWatermarkPosition = -1 ;// offset in bytes
-        public long currentLastStablePosition ;// offset in bytes
-        public long currentWrittenPosition = -1;// offset in bytes
+        public long currentOffsetPosition; // offset in bytes
+        public long lastRequestedOffsetPosition; // offset in bytes
+        public long currentHighWatermarkPosition = -1; // offset in bytes
+        public long currentLastStablePosition; // offset in bytes
+        public long currentWrittenPosition = -1; // offset in bytes
 
         public boolean sealed = false;
 
 
-        public Segment(long baseOffset, long position,long startAddress, int rkey){
+        public Segment(long baseOffset, long position, long startAddress, int rkey) {
             this.fetchBaseOffset = baseOffset;
             this.currentOffsetPosition = position;
             this.lastRequestedOffsetPosition = position;
@@ -291,11 +294,11 @@ public class FetchRdmaSessionHandler {
 
         private final boolean withSlots;
         private final int fetchSize;
-        private final long addressUpdateTimeout ; // 100 ms = 100_000_000L
+        private final long addressUpdateTimeout; // 100 ms = 100_000_000L
         public final TopicPartition topicPartition;
 
-        public long highWatermark =0; // offset in Kafka terms
-        public long lastStableOffset=0 ;// offset in Kafka terms
+        public long highWatermark = 0; // offset in Kafka terms
+        public long lastStableOffset = 0; // offset in Kafka terms
 
 
         public short apiversion;
@@ -328,10 +331,10 @@ public class FetchRdmaSessionHandler {
         private int failuresToGetRecords = 0;
         private int pendingRDMAreq = 0;
 
-        TreeSet<CompletedRdmaFetch> set = new TreeSet< >();
+        TreeSet<CompletedRdmaFetch> set = new TreeSet<>();
 
 
-        FetchRdmaRequestData(TopicPartition topicPartition,ConsumerRDMAClient rdmaClient, long nowNanos,
+        FetchRdmaRequestData(TopicPartition topicPartition, ConsumerRDMAClient rdmaClient, long nowNanos,
                              int fetchSize, int cacheSize, int wrapAroundLimit, boolean withSlots, long addressUpdateTimeoutInMs) {
             this.fetchSize = fetchSize;
             this.lastUpdateRequested = nowNanos;
@@ -345,7 +348,7 @@ public class FetchRdmaSessionHandler {
             this.wrapAroundLimit = wrapAroundLimit;
             this.cache = ByteBuffer.allocateDirect(cacheSize);
             this.withSlots = withSlots;
-            this.addressUpdateTimeout = addressUpdateTimeoutInMs*1_000_000L; // convert to nano sec
+            this.addressUpdateTimeout = addressUpdateTimeoutInMs * 1_000_000L; // convert to nano sec
 
           //  this.mr = rdmaClient.MemReg(targetBuffer); // we cannot allocate immediately since there could be no rdma ProtectionDomain
         }
@@ -353,25 +356,25 @@ public class FetchRdmaSessionHandler {
 
         public void updateMetadata(RDMAConsumeAddressResponse.PartitionData memoryData) {
 
-            hasPendingAddressRequest=false;
+            hasPendingAddressRequest = false;
 
             Segment toUpdate = null;
 
-            if(activeSegment!=null){
-                if(activeSegment.fetchBaseOffset > memoryData.baseOffset){
+            if (activeSegment != null) {
+                if (activeSegment.fetchBaseOffset > memoryData.baseOffset) {
                     System.out.println("Received extremely old metadata update");
                     return;
                 }
 
-                if(activeSegment.fetchBaseOffset == memoryData.baseOffset){
+                if (activeSegment.fetchBaseOffset == memoryData.baseOffset) {
                     toUpdate = activeSegment;
                 } else {
 
                     if (futureSegment != null) {
-                        if(futureSegment.fetchBaseOffset == memoryData.baseOffset){
+                        if (futureSegment.fetchBaseOffset == memoryData.baseOffset) {
                             System.out.println("we update futureSegment");
                             toUpdate = futureSegment;
-                        } else{
+                        } else {
                             System.out.println("unexpected segment baseoffset");
                         }
                     } else {
@@ -379,17 +382,17 @@ public class FetchRdmaSessionHandler {
                         toUpdate = futureSegment;
                     }
                 }
-            } else{
-                activeSegment = new Segment(memoryData.baseOffset,memoryData.position,memoryData.address,memoryData.rkey);
+            } else {
+                activeSegment = new Segment(memoryData.baseOffset, memoryData.position, memoryData.address, memoryData.rkey);
                 toUpdate = activeSegment;
             }
 
-            if(toUpdate==null){
+            if (toUpdate == null) {
                 return;
             }
 
 
-            if(toUpdate.currentWrittenPosition < memoryData.writtenPosition || toUpdate.currentHighWatermarkPosition < memoryData.watermarkPosition) {
+            if (toUpdate.currentWrittenPosition < memoryData.writtenPosition || toUpdate.currentHighWatermarkPosition < memoryData.watermarkPosition) {
                 //System.out.println("Update metadata");
                 highWatermark = memoryData.watermarkOffset;
                 lastStableOffset = memoryData.lastStableOffset;
@@ -402,13 +405,13 @@ public class FetchRdmaSessionHandler {
             }
 
 
-            if( this.mr == null){
-                  this.mr = rdmaClient.MemReg(cache);
+            if (this.mr == null) {
+                this.mr = rdmaClient.MemReg(cache);
             }
         }
 
         // from slots
-        public void updateMetadata(long baseOffset, ByteBuffer buffer){
+        public void updateMetadata(long baseOffset, ByteBuffer buffer) {
             long slotSealed = buffer.getLong();
             long wmposition = buffer.getLong();
             long lsoposition =  buffer.getLong();
@@ -417,24 +420,24 @@ public class FetchRdmaSessionHandler {
 
             Segment toUpdate = null;
 
-            if(activeSegment!=null){
-                if(activeSegment.fetchBaseOffset == baseOffset)
+            if (activeSegment != null) {
+                if (activeSegment.fetchBaseOffset == baseOffset)
                     toUpdate = activeSegment;
             }
 
-            if(futureSegment!=null){
-                if(futureSegment.fetchBaseOffset == baseOffset)
+            if (futureSegment != null) {
+                if (futureSegment.fetchBaseOffset == baseOffset)
                     toUpdate = futureSegment;
             }
 
-            if(toUpdate!=null){
+            if (toUpdate!=null) {
                 toUpdate.currentHighWatermarkPosition = wmposition;
                 toUpdate.currentLastStablePosition = lsoposition;
 
                 highWatermark = wmoffset;
                 lastStableOffset = lsooffset;
 
-                if(slotSealed<0){
+                if (slotSealed < 0) {
                     toUpdate.sealed = true;
                     toUpdate.currentWrittenPosition = -slotSealed;
                 } else {
@@ -445,26 +448,26 @@ public class FetchRdmaSessionHandler {
 
         }
 
-        public boolean isReady( ){
+        public boolean isReady() {
             //we need to update if we are done with the current segment
-            return activeSegment!=null;
+            return activeSegment != null;
         }
 
-        public long getBaseOffsetToForget(){
-            return toForget.isEmpty() ? -1L : toForget.pollFirst().fetchBaseOffset ;
+        public long getBaseOffsetToForget() {
+            return toForget.isEmpty() ? -1L : toForget.pollFirst().fetchBaseOffset;
         }
 
-        public boolean requiresUpdate(IsolationLevel isolationLevel, long nowNanos){
+        public boolean requiresUpdate(IsolationLevel isolationLevel, long nowNanos) {
             //we need to update if we are done with the current segment
             //or the request on initial metadata has not been received
 
 
-            boolean updateNeeded =  (!isReady() || isExhausted(isolationLevel)) && (futureSegment==null) ;
+            boolean updateNeeded = (!isReady() || isExhausted(isolationLevel)) && (futureSegment == null);
             boolean updateShouldBeSend = !hasPendingAddressRequest || (nowNanos - lastUpdateRequested > addressUpdateTimeout);
 
-            if(updateNeeded && updateShouldBeSend){
+            if (updateNeeded && updateShouldBeSend) {
                 lastUpdateRequested = nowNanos;
-                hasPendingAddressRequest=true;
+                hasPendingAddressRequest = true;
                 return true;
             }
 
@@ -474,48 +477,48 @@ public class FetchRdmaSessionHandler {
 
         // TODO make use of isolationLevel
         public boolean requiresRdmaUpdate(IsolationLevel isolationLevel) {
-            return  (withSlots) && (activeSegment != null) && !activeSegment.sealed;
+            return withSlots && (activeSegment != null) && !activeSegment.sealed;
         }
 
-        private boolean isExhausted(IsolationLevel isolationLevel){
+        private boolean isExhausted(IsolationLevel isolationLevel) {
 
-            if(activeSegment == null){
+            if (activeSegment == null) {
                 return true;
             }
 
-            return  (!withSlots || activeSegment.sealed )&& (activeSegment.lastRequestedOffsetPosition == activeSegment.currentHighWatermarkPosition);
+            return (!withSlots || activeSegment.sealed) && (activeSegment.lastRequestedOffsetPosition == activeSegment.currentHighWatermarkPosition);
         }
 
-        private boolean isCompleted(  ) {
+        private boolean isCompleted() {
             return activeSegment.sealed && (activeSegment.currentOffsetPosition == activeSegment.currentHighWatermarkPosition);
         }
 
 
 
-        public void addFetch(CompletedRdmaFetch fetch){
+        public void addFetch(CompletedRdmaFetch fetch) {
             pendingRDMAreq--;
             set.add(fetch);
         }
 
-        public RDMAWrBuilder getFetchRequest(IsolationLevel isolationLevel){
+        public RDMAWrBuilder getFetchRequest(IsolationLevel isolationLevel) {
 
             long maxFetchablePosition = activeSegment.currentHighWatermarkPosition;
-            int length =  (int)Math.min(maxFetchablePosition - activeSegment.lastRequestedOffsetPosition,(cacheSize-cachePosition));
+            int length = (int) Math.min(maxFetchablePosition - activeSegment.lastRequestedOffsetPosition, cacheSize - cachePosition);
 
-            if(length == 0)
+            if (length == 0)
                 return null;
-            else{
+            else {
 
-                length = Math.min(length,fetchSize);
-                ByteBuffer targetBuffer = ((ByteBuffer)cache.duplicate().position(cachePosition).limit(cachePosition+length)).slice();
+                length = Math.min(length, fetchSize);
+                ByteBuffer targetBuffer = ((ByteBuffer) cache.duplicate().position(cachePosition).limit(cachePosition + length)).slice();
 
                 FetchRDMAReadRequest req =
-                        new FetchRDMAReadRequest(topicPartition,activeSegment.fetchBaseOffset,
-                                activeSegment.startAddress+activeSegment.lastRequestedOffsetPosition,
-                                activeSegment.rkey,length,targetBuffer,mr.getLkey() );
+                        new FetchRDMAReadRequest(topicPartition, activeSegment.fetchBaseOffset,
+                                activeSegment.startAddress + activeSegment.lastRequestedOffsetPosition,
+                                activeSegment.rkey, length, targetBuffer, mr.getLkey());
 
-                cachePosition+=length;
-                activeSegment.lastRequestedOffsetPosition+=length;
+                cachePosition += length;
+                activeSegment.lastRequestedOffsetPosition += length;
                 pendingRDMAreq++;
 
                 return req;
@@ -523,84 +526,81 @@ public class FetchRdmaSessionHandler {
 
         }
 
-        public MemoryRecords getMemoryRecords(){
-            if(activeSegment==null){
-                System.out.println("Unexpected activeSegment == null ");
+        public MemoryRecords getMemoryRecords() {
+            if (activeSegment == null) {
+                System.out.println("Unexpected activeSegment == null");
             }
 
-            long currentAddress = activeSegment.startAddress+activeSegment.currentOffsetPosition;
+            long currentAddress = activeSegment.startAddress + activeSegment.currentOffsetPosition;
             int length = 0;
 
-            while(!set.isEmpty() && set.first().startAddress == currentAddress ){
+            while (!set.isEmpty() && set.first().startAddress == currentAddress) {
                 CompletedRdmaFetch fetch = set.pollFirst();
-                length +=fetch.length;
+                length += fetch.length;
                 currentAddress += fetch.length;
             }
 
-            if(length==0){
+            if (length == 0) {
                 // now new fetches or we are missing the first block
                 return null;
             } else {
 
-                ByteBuffer buffer = ((ByteBuffer)(cache.duplicate().position(processedPosition).limit(processedPosition+length))).slice();
+                ByteBuffer buffer = ((ByteBuffer) (cache.duplicate().position(processedPosition).limit(processedPosition + length))).slice();
                 MemoryRecords rec = MemoryRecords.readableRecords(buffer);
                 // We give out only readable records!
                 int readablebytes = rec.validBytes();
                 buffer.limit(readablebytes);
-                ByteBuffer copyForUser = (ByteBuffer)ByteBuffer.allocate(readablebytes).put(buffer).rewind();
+                ByteBuffer copyForUser = (ByteBuffer) ByteBuffer.allocate(readablebytes).put(buffer).rewind();
 
-                activeSegment.currentOffsetPosition+=readablebytes;
-                processedPosition+=readablebytes;
+                activeSegment.currentOffsetPosition += readablebytes;
+                processedPosition += readablebytes;
 
                 // if we croped a peace of buffer then we reinsert the rest
-                if(readablebytes!=length){
-                    int tempLength = length-readablebytes;
-                    ByteBuffer temp = ((ByteBuffer)(cache.duplicate().position(processedPosition).limit(processedPosition+tempLength))).slice();
-                    set.add(new CompletedRdmaFetch(activeSegment.startAddress+activeSegment.currentOffsetPosition,tempLength,temp));
+                if (readablebytes != length) {
+                    int tempLength = length - readablebytes;
+                    ByteBuffer temp = ((ByteBuffer) (cache.duplicate().position(processedPosition).limit(processedPosition + tempLength))).slice();
+                    set.add(new CompletedRdmaFetch(activeSegment.startAddress + activeSegment.currentOffsetPosition, tempLength, temp));
                 }
 
                 // check whether we should wrap around cache
-                int useableBytes = (cacheSize - cachePosition);
-                if(pendingRDMAreq == 0 && useableBytes < wrapAroundLimit ){
+                int useableBytes = cacheSize - cachePosition;
+                if (pendingRDMAreq == 0 && useableBytes < wrapAroundLimit) {
                     // perform wrapping around and copying unprocessed bytes.
 
                     //we will copy processibleBytes
-                    int processibleBytes = (cachePosition - processedPosition);
-                    if(processibleBytes > 0){
-                        ByteBuffer copyFrom = ((ByteBuffer)(cache.duplicate().position(processedPosition).limit(processedPosition+processibleBytes))).slice();
+                    int processibleBytes = cachePosition - processedPosition;
+                    if (processibleBytes > 0) {
+                        ByteBuffer copyFrom = ((ByteBuffer) (cache.duplicate().position(processedPosition).limit(processedPosition + processibleBytes))).slice();
                         cache.rewind();
                         cache.put(copyFrom);
                         cache.rewind();
                         set.clear();
-                        ByteBuffer temp = ((ByteBuffer)(cache.duplicate().position(0).limit(processibleBytes))).slice();
-                        set.add(new CompletedRdmaFetch(activeSegment.startAddress+activeSegment.currentOffsetPosition,processibleBytes,temp));
+                        ByteBuffer temp = ((ByteBuffer) (cache.duplicate().position(0).limit(processibleBytes))).slice();
+                        set.add(new CompletedRdmaFetch(activeSegment.startAddress + activeSegment.currentOffsetPosition, processibleBytes, temp));
                     }
 
                     cachePosition = processibleBytes;
                     processedPosition = 0;
                 }
 
-                if(isCompleted()){
-                    assert(set.isEmpty());
+                if (isCompleted()) {
+                    assert set.isEmpty();
                     toForget.add(activeSegment);
                     activeSegment = futureSegment;
                     futureSegment = null;
                 }
 
-                if(readablebytes == 0){
+                if (readablebytes == 0) {
                     failuresToGetRecords++;
-                    if(failuresToGetRecords > 100){
-                       System.out.println("Too many failures in parsing RDMA fetches. Increase fetchsize or code is broken");
+                    if (failuresToGetRecords > 100) {
+                        System.out.println("Too many failures in parsing RDMA fetches. Increase fetchsize or code is broken");
                     }
                     return null;
-                }else{
+                } else {
                     failuresToGetRecords = 0;
                     return MemoryRecords.readableRecords(copyForUser);
                 }
             }
         }
-
-
     }
-
 }

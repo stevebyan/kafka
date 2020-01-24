@@ -16,8 +16,6 @@
  */
 package org.apache.kafka.common.errors;
 
-import java.util.Map;
-
 /**
  * Indicates that rdma device does not exist
  */

@@ -33,7 +33,7 @@ public class FetchRDMASlotRequest implements RDMAWrBuilder {
     private ByteBuffer targetBuffer;
     private int lkey;
 
-    public FetchRDMASlotRequest(long remoteAddress, int rkey, int length, ByteBuffer targetBuffer, int lkey){
+    public FetchRDMASlotRequest(long remoteAddress, int rkey, int length, ByteBuffer targetBuffer, int lkey) {
         this.remoteAddress = remoteAddress;
         this.rkey = rkey;
         this.length = length;
@@ -53,7 +53,7 @@ public class FetchRDMASlotRequest implements RDMAWrBuilder {
         sgeList.add(sgeSend);
 
 
-        IbvSendWR sendWR = new IbvSendWR( );
+        IbvSendWR sendWR = new IbvSendWR();
         //sendWR.setWr_id(1002);
         sendWR.setSg_list(sgeList);
         sendWR.setOpcode(IbvSendWR.IBV_WR_RDMA_READ);

@@ -17,22 +17,21 @@
 package org.apache.kafka.common.requests;
 
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.UnsupportedCompressionTypeException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.protocol.types.ArrayOf;
 import org.apache.kafka.common.protocol.types.Field;
 import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.record.*;
 import org.apache.kafka.common.utils.CollectionUtils;
-import org.apache.kafka.common.utils.Utils;
 
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Collection;
+import java.util.Collections;
 
-import static org.apache.kafka.common.protocol.CommonFields.*;
-import static org.apache.kafka.common.protocol.types.Type.RECORDS;
 import static org.apache.kafka.common.protocol.CommonFields.TOPIC_NAME;
 import static org.apache.kafka.common.protocol.types.Type.INT32;
 import static org.apache.kafka.common.protocol.types.Type.INT16;
@@ -97,13 +96,13 @@ public class RDMAProduceAddressRequest extends AbstractRequest {
 
         public Builder(short acks,
                        List<TopicPartition> topicPartitions,
-                       List<TopicPartition> toUpdate,int timeout) {
-            this(acks,topicPartitions,toUpdate,timeout,false );
+                       List<TopicPartition> toUpdate, int timeout) {
+            this(acks,topicPartitions, toUpdate, timeout, false );
         }
 
         public Builder(short acks,
                        List<TopicPartition> topicPartitions,
-                       List<TopicPartition> toUpdate,int timeout, boolean fromLeader) {
+                       List<TopicPartition> toUpdate, int timeout, boolean fromLeader) {
             super(ApiKeys.PRODUCER_RDMA_REGISTER);
             this.acks = acks;
             this.topicPartitions = topicPartitions;
@@ -115,7 +114,7 @@ public class RDMAProduceAddressRequest extends AbstractRequest {
         @Override
         public RDMAProduceAddressRequest build(short version) {
 
-            return new RDMAProduceAddressRequest(version, acks, topicPartitions,toUpdate,timeout,fromLeader);
+            return new RDMAProduceAddressRequest(version, acks, topicPartitions, toUpdate, timeout, fromLeader);
         }
 
 
@@ -136,21 +135,21 @@ public class RDMAProduceAddressRequest extends AbstractRequest {
     private final short acks;
     private final boolean isFromLeader;
 
-    private RDMAProduceAddressRequest(short version,short acks,
+    private RDMAProduceAddressRequest(short version, short acks,
                                       List<TopicPartition> topicPartitions,
                                       List<TopicPartition> toUpdate, int timeout) {
-        this(version,acks,topicPartitions, toUpdate,timeout,false);
+        this(version, acks, topicPartitions, toUpdate, timeout, false);
     }
 
 
-    private RDMAProduceAddressRequest(short version,short acks,
+    private RDMAProduceAddressRequest(short version, short acks,
                                       List<TopicPartition> topicPartitions,
                                       List<TopicPartition> toUpdate, int timeout, boolean isFromLeader) {
         super(ApiKeys.PRODUCER_RDMA_REGISTER, version);
         this.acks = acks;
         this.topicPartitions = topicPartitions;
         this.toUpdate = toUpdate;
-        this.timeout =timeout;
+        this.timeout = timeout;
         this.isFromLeader = isFromLeader;
     }
 
@@ -193,7 +192,7 @@ public class RDMAProduceAddressRequest extends AbstractRequest {
     @Override
     public Struct toStruct() {
         // Store it in a local variable to protect against concurrent updates
-        List<TopicPartition> topicPartitions= this.topicPartitions;
+        List<TopicPartition> topicPartitions = this.topicPartitions;
         Struct struct = new Struct(ApiKeys.PRODUCER_RDMA_REGISTER.requestSchema(version()));
 
         struct.set(IS_FROM_LEADER, isFromLeader);
@@ -269,7 +268,7 @@ public class RDMAProduceAddressRequest extends AbstractRequest {
             case 5:
             case 6:
             case 7:
-                return new RDMAProduceAddressResponse("",0,responseMap);
+                return new RDMAProduceAddressResponse("", 0, responseMap);
             default:
                 throw new IllegalArgumentException(String.format("Version %d is not valid. Valid versions for %s are 0 to %d",
                         versionId, this.getClass().getSimpleName(), ApiKeys.PRODUCER_RDMA_REGISTER.latestVersion()));
