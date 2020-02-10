@@ -988,11 +988,11 @@ class ReplicaManager(val config: KafkaConfig,
   // rdma patch todo
   def fetchRDMAConsumerAddress(clientId: String,
                         topicPartition: TopicPartition,
-                       start_offset: Long,
+                       startOffset: Long,
                        currentLeaderEpoch: Optional[Integer],
                        fetchOnlyFromLeader: Boolean): Option[ConsumerAddressReadInfo] ={
     val partition = getPartitionOrException(topicPartition,expectLeader = fetchOnlyFromLeader)
-    partition.fetchAddressForOffset(clientId, start_offset, currentLeaderEpoch, fetchOnlyFromLeader)
+    partition.fetchAddressForOffset(clientId, startOffset, currentLeaderEpoch, fetchOnlyFromLeader)
   }
 
   // rdma patch todo

@@ -939,7 +939,7 @@ class Partition(val topicPartition: TopicPartition,
   // rdma patch
   @threadsafe
   def fetchAddressForOffset(clientId: String,
-                             start_offset: Long,
+                             startOffset: Long,
                             currentLeaderEpoch: Optional[Integer],
                             fetchOnlyFromLeader: Boolean): Option[ConsumerAddressReadInfo] = inReadLock(leaderIsrUpdateLock) {
            // decide whether to only fetch from leader
@@ -949,7 +949,7 @@ class Partition(val topicPartition: TopicPartition,
     val log = localReplica.log
     val address = log match {
       case Some(log) =>
-        val infoOpt = log.fetchAddressByOffset(start_offset)
+        val infoOpt = log.fetchAddressByOffset(startOffset)
 
         infoOpt.map { addrinfo =>
 

@@ -140,7 +140,7 @@ class GetAddressTest extends BaseRequestTest {
 
     val tplist = List(topicPartition).asJava
     val toUpdate: List[TopicPartition]  = List()
-    //val targetTimes = Map(tp -> new RDMAProduceAddressRequest(start_offset))
+    //val targetTimes = Map(tp -> new RDMAProduceAddressRequest(startOffset))
     val request = new RDMAProduceAddressRequest.Builder(0,tplist,toUpdate.asJava,0).build()
 
 

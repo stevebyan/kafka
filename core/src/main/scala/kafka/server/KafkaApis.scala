@@ -694,7 +694,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         val fetchOnlyFromLeader = rdmaAddressRequest.replicaId != RDMAConsumeAddressRequest.DEBUGGING_REPLICA_ID
 
         val foundOpt = replicaManager.fetchRDMAConsumerAddress(clientId,topicPartition,
-          partitionData.start_offset,partitionData.currentLeaderEpoch,fetchOnlyFromLeader)
+          partitionData.startOffset,partitionData.currentLeaderEpoch,fetchOnlyFromLeader)
 
         val response = foundOpt match {
           case Some(found) =>
