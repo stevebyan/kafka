@@ -36,7 +36,7 @@
     </module>
     <module name="RedundantImport"/>
     <module name="IllegalImport">
-      <property name="illegalPkgs" value="{}">
+      <property name="illegalPkgs" value="{}" />
     </module>
     <module name="EqualsHashCode"/>
     <module name="SimplifyBooleanExpression"/>
