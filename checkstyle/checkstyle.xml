@@ -36,7 +36,8 @@
     </module>
     <module name="RedundantImport"/>
     <module name="IllegalImport">
-      <property name="illegalPkgs" value="{}" />
+      <property name="regexp" value="true"/>
+      <property name="illegalPkgs" value="sun\.nio\.[^c].*" />
     </module>
     <module name="EqualsHashCode"/>
     <module name="SimplifyBooleanExpression"/>
