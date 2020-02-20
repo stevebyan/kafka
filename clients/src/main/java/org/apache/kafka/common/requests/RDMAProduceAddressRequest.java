@@ -97,7 +97,7 @@ public class RDMAProduceAddressRequest extends AbstractRequest {
         public Builder(short acks,
                        List<TopicPartition> topicPartitions,
                        List<TopicPartition> toUpdate, int timeout) {
-            this(acks,topicPartitions, toUpdate, timeout, false );
+            this(acks, topicPartitions, toUpdate, timeout, false);
         }
 
         public Builder(short acks,

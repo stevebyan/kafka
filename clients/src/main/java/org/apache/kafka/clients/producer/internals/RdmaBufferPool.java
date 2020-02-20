@@ -19,24 +19,14 @@ package org.apache.kafka.clients.producer.internals;
 import com.ibm.disni.verbs.IbvMr;
 import org.apache.kafka.clients.RdmaClient;
 
-import org.apache.kafka.common.MetricName;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.TimeoutException;
-import org.apache.kafka.common.metrics.Metrics;
-import org.apache.kafka.common.metrics.Sensor;
-import org.apache.kafka.common.metrics.stats.Meter;
 import org.apache.kafka.common.utils.Time;
 import sun.nio.ch.DirectBuffer;
 
-import java.nio.Buffer;
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 
@@ -245,7 +235,7 @@ class RdmaSegment {
                 }
             }
 
-            if ((lastFreeByte-currentAddress) >= size) {
+            if ((lastFreeByte - currentAddress) >= size) {
                 int position = (int) (currentAddress - startAddress);
                 buffer = ((ByteBuffer) memory.duplicate().position(position).limit(position + size)).slice();
                 currentAddress += size;
@@ -276,7 +266,7 @@ class RdmaSegment {
             this.mr = rdmaClient.MemReg(memory);
             this.lkey = mr.getLkey();
             return lkey;
-        } catch(Exception e) {
+        } catch (Exception e) {
             System.out.println("Uncaught memory allocation error");
         } finally {
             lock.unlock();

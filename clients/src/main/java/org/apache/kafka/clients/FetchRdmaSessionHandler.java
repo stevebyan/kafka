@@ -430,7 +430,7 @@ public class FetchRdmaSessionHandler {
                     toUpdate = futureSegment;
             }
 
-            if (toUpdate!=null) {
+            if (toUpdate != null) {
                 toUpdate.currentHighWatermarkPosition = wmposition;
                 toUpdate.currentLastStablePosition = lsoposition;
 

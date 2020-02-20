@@ -40,7 +40,7 @@ public class VerbsEP {
     private volatile Integer canPostReceives;
 
 
-    private LinkedList<IbvSendWR> wrList_send = new LinkedList<IbvSendWR>();
+    private LinkedList<IbvSendWR> wrListSend = new LinkedList<IbvSendWR>();
 
 
     private int signaledcounter = 1;
@@ -53,13 +53,13 @@ public class VerbsEP {
 
     SVCPostRecv emptyrecv = null;
 
-    VerbsEP(RdmaCmId id, IbvQP qp,IbvCQ sendcq, IbvCQ recvcq,
-             int CanPostSends, Integer canPostSendSignaled, Integer canPostReceives) {
+    VerbsEP(RdmaCmId id, IbvQP qp, IbvCQ sendcq, IbvCQ recvcq,
+             int canPostSends, Integer canPostSendSignaled, Integer canPostReceives) {
         this.id = id;
         this.qp = qp;
         this.sendcq = sendcq;
         this.recvcq = recvcq;
-        this.canPostSends = CanPostSends;
+        this.canPostSends = canPostSends;
         this.canPostSendSignaled = canPostSendSignaled;
         this.canPostReceives = canPostReceives;
 
@@ -81,7 +81,7 @@ public class VerbsEP {
 
     public void postsend(IbvSendWR wr, boolean dosend) throws Exception {
 
-        wrList_send.add(wr);
+        wrListSend.add(wr);
 
         if (canPostSends == 0) {
             return;
@@ -92,13 +92,13 @@ public class VerbsEP {
         }
     }
 
-    private void trigger_send() throws Exception{
+    private void trigger_send() throws Exception {
         LinkedList<IbvSendWR> wrListToSend = new LinkedList<IbvSendWR>();
 
-        while (!wrList_send.isEmpty() && canPostSends > 0) {
-            if (wrList_send.getFirst().getSend_flags() == IbvSendWR.IBV_SEND_SIGNALED || signaledcounter > 10) {
+        while (!wrListSend.isEmpty() && canPostSends > 0) {
+            if (wrListSend.getFirst().getSend_flags() == IbvSendWR.IBV_SEND_SIGNALED || signaledcounter > 10) {
                 if (canPostSendSignaled > 0) {
-                    wrList_send.getFirst().setSend_flags(IbvSendWR.IBV_SEND_SIGNALED);
+                    wrListSend.getFirst().setSend_flags(IbvSendWR.IBV_SEND_SIGNALED);
                     canPostSendSignaled--;
                     signaledafter.add(signaledcounter);
                     signaledcounter = 0;
@@ -107,7 +107,7 @@ public class VerbsEP {
                 }
             }
 
-            wrListToSend.add(wrList_send.pollFirst());
+            wrListToSend.add(wrListSend.pollFirst());
 
             signaledcounter++;
             canPostSends--;
@@ -142,21 +142,21 @@ public class VerbsEP {
         }
         LinkedList<IbvWC> recvList = new LinkedList<>();
         int compl = this.sendpoll.execute().getPolls();
-        for (int i= 0; i < compl; i++) {
+        for (int i = 0; i < compl; i++) {
             recvList.add(sendwcList[i]);
             canPostSends += signaledafter.pollFirst();
             canPostSendSignaled++;
         }
 
-        if (compl!=0) {
+        if (compl != 0) {
             trigger_send();
         }
 
         return recvList;
     }
 
-    public LinkedList<IbvWC> pollrecv( ) throws Exception{
-        if(this.recvpoll == null) {
+    public LinkedList<IbvWC> pollrecv() throws Exception {
+        if (this.recvpoll == null) {
             this.recvpoll = recvcq.poll(recvwcList, sendwcList.length);
         }
         LinkedList<IbvWC> recvList =  new LinkedList<>();

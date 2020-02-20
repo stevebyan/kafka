@@ -50,7 +50,7 @@ public class ConsumerRDMAClient   {
 
 
     public void tryConnect(int id, String hostname, int port) {
-        Node node = new Node(id, hostname,port);
+        Node node = new Node(id, hostname, port);
         try {
             rdmaClient.connect(node);
         } catch (Exception e) {
@@ -147,7 +147,7 @@ public class ConsumerRDMAClient   {
         poll(time.timer(0), null);
     }
 
-    public boolean hasPendingRequests(){
+    public boolean hasPendingRequests() {
         return rdmaClient.hasInFlightRequests();
     }
 

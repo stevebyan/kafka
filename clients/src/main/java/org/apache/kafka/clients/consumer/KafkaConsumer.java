@@ -16,15 +16,13 @@
  */
 package org.apache.kafka.clients.consumer;
 
-//import org.apache.kafka.clients.*;
-import org.apache.kafka.clients.Metadata;
-import org.apache.kafka.clients.ClientUtils;
-import org.apache.kafka.clients.NetworkClient;
-import org.apache.kafka.clients.ClientDnsLookup;
 import org.apache.kafka.clients.ApiVersions;
-import org.apache.kafka.clients.RdmaClient;
+import org.apache.kafka.clients.ClientDnsLookup;
+import org.apache.kafka.clients.ClientUtils;
 import org.apache.kafka.clients.ExclusiveRdmaClient;
-
+import org.apache.kafka.clients.Metadata;
+import org.apache.kafka.clients.NetworkClient;
+import org.apache.kafka.clients.RdmaClient;
 import org.apache.kafka.clients.consumer.internals.ConsumerCoordinator;
 import org.apache.kafka.clients.consumer.internals.ConsumerInterceptors;
 import org.apache.kafka.clients.consumer.internals.ConsumerMetrics;
@@ -35,7 +33,12 @@ import org.apache.kafka.clients.consumer.internals.Heartbeat;
 import org.apache.kafka.clients.consumer.internals.NoOpConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.internals.PartitionAssignor;
 import org.apache.kafka.clients.consumer.internals.SubscriptionState;
-import org.apache.kafka.common.*;
+import org.apache.kafka.common.Cluster;
+import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.Metric;
+import org.apache.kafka.common.MetricName;
+import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.InvalidConfigurationException;
 import org.apache.kafka.common.errors.InvalidGroupIdException;
@@ -792,18 +795,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             } else {
                 System.out.println("Kafka consumer is a single threaded");
             }
-            int maxSendSize = config.getInt(ConsumerConfig.RDMA_SEND_SIZE);
-            int maxReceiveSize = config.getInt(ConsumerConfig.RDMA_RECV_SIZE);
-            int requestQuota = config.getInt(ConsumerConfig.RDMA_QUOTA_SIZE);
-            int compeltionQueueSize = config.getInt(ConsumerConfig.RDMA_QUEUE_SIZE);
-            int wcBatch = config.getInt(ConsumerConfig.WC_BATCH);
-            int contentedLimit = config.getInt(ConsumerConfig.RDMA_CONTENTION_LIMIT);
-
-           // long tcpTimeout = config.getLong(ConsumerConfig.TCP_TIMEOUT);
-
-            RdmaClient rdmaNetwork = new ExclusiveRdmaClient(clientId, logContext, new RdmaClient.RDMAQPparams(maxSendSize, maxReceiveSize),
-                    requestQuota, compeltionQueueSize, wcBatch, contentedLimit);
-            this.rdmaClient = new ConsumerRDMAClient(rdmaNetwork, clientId, time);
+            this.rdmaClient = makeRdmaClient(config, clientId, logContext);
 
             int cacheSize = config.getInt(ConsumerConfig.RDMA_CACHE_SIZE);
             int wrapAroundLimit = config.getInt(ConsumerConfig.RDMA_CACHE_WRAP_LIMIT);
@@ -843,6 +835,21 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             // now propagate the exception
             throw new KafkaException("Failed to construct kafka consumer", t);
         }
+    }
+
+    private ConsumerRDMAClient makeRdmaClient(ConsumerConfig config, String clientId, LogContext logContext) throws Exception {
+        int maxSendSize = config.getInt(ConsumerConfig.RDMA_SEND_SIZE);
+        int maxReceiveSize = config.getInt(ConsumerConfig.RDMA_RECV_SIZE);
+        int requestQuota = config.getInt(ConsumerConfig.RDMA_QUOTA_SIZE);
+        int completionQueueSize = config.getInt(ConsumerConfig.RDMA_QUEUE_SIZE);
+        int wcBatch = config.getInt(ConsumerConfig.WC_BATCH);
+        int contentedLimit = config.getInt(ConsumerConfig.RDMA_CONTENTION_LIMIT);
+
+        // long tcpTimeout = config.getLong(ConsumerConfig.TCP_TIMEOUT);
+
+        RdmaClient rdmaNetwork = new ExclusiveRdmaClient(clientId, logContext, new RdmaClient.RDMAQPparams(maxSendSize, maxReceiveSize),
+                requestQuota, completionQueueSize, wcBatch, contentedLimit);
+        return new ConsumerRDMAClient(rdmaNetwork, clientId, time);
     }
 
     // visible for testing

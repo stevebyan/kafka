@@ -55,7 +55,7 @@ public class RdmaSessionHandlers {
     }
 
 
-    public boolean isReady(TopicPartition tp ) {
+    public boolean isReady(TopicPartition tp) {
         return sessionPartitions.get(tp).isReady();
     }
 
@@ -162,7 +162,7 @@ public class RdmaSessionHandlers {
             int lkey = pool.getLkey(batch.buffer());
             int size = batch.estimatedSizeInBytes();
             assert fitsBatch(size);
-            ProduceRDMAWriteRequest request = new ProduceRDMAWriteRequest(batch, baseOffset, currentAddress, rkey, lkey,immdata);
+            ProduceRDMAWriteRequest request = new ProduceRDMAWriteRequest(batch, baseOffset, currentAddress, rkey, lkey, immdata);
             currentAddress += size;
             return request;
         }

@@ -16,7 +16,14 @@
  */
 package org.apache.kafka.clients;
 
-import com.ibm.disni.verbs.*;
+import com.ibm.disni.verbs.IbvMr;
+import com.ibm.disni.verbs.IbvPd;
+import com.ibm.disni.verbs.IbvSendWR;
+import com.ibm.disni.verbs.IbvWC;
+import com.ibm.disni.verbs.RdmaCm;
+import com.ibm.disni.verbs.RdmaCmEvent;
+import com.ibm.disni.verbs.RdmaCmId;
+import com.ibm.disni.verbs.RdmaEventChannel;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.utils.LogContext;
 import org.slf4j.Logger;

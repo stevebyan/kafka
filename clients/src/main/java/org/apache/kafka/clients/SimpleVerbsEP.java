@@ -90,7 +90,7 @@ public class SimpleVerbsEP {
         }
     }
 
-    void trigger_send() throws Exception{
+    void trigger_send() throws Exception {
 
         int canSend = Math.min(canIssueRdma, canSendRequests);
         if (canSend == 0)
@@ -104,7 +104,7 @@ public class SimpleVerbsEP {
 
         LinkedList<IbvSendWR> wrListToSend =  new LinkedList<>();
 
-        for (int i =0; i < willSend; i++) {
+        for (int i = 0; i < willSend; i++) {
             wrListToSend.add(delayedWrites.pollFirst());
         }
 
@@ -127,7 +127,7 @@ public class SimpleVerbsEP {
         return recvList;
     }
 
-    public int pollsend(LinkedList<IbvWC> recvList) throws Exception{
+    public int pollsend(LinkedList<IbvWC> recvList) throws Exception {
         if (this.sendpoll == null) {
             this.sendpoll = sendcq.poll(sendwcList, sendwcList.length);
         }

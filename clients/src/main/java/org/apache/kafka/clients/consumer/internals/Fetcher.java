@@ -98,8 +98,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static java.util.Collections.emptyList;
 
-import com.ibm.disni.verbs.IbvMr;
-
 /**
  * This class manages the fetching process with the brokers.
  * <p>
@@ -675,7 +673,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
                     FetchRdmaSessionHandler handler = rdmaSessionHandlers.computeIfAbsent(node.id(),
                             t -> new FetchRdmaSessionHandler(logContext, node.id(), rdmaClient, fetchSize,
-                                        cacheSize, wrapAroundLimit, withSlots, frequencyOfRdmaUpdate, addressUpdateTimeoutInMs));
+                                    cacheSize, wrapAroundLimit, withSlots, frequencyOfRdmaUpdate, addressUpdateTimeoutInMs));
 
                     if (handler.requiresUpdatePartition(partition, isolationLevel, nowNanos)) {
                         long position = this.subscriptions.position(partition);
@@ -789,7 +787,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
             client.pollNoWakeup();
         }
 
-        if (outstandingFetchAddress.get()!=0) {
+        if (outstandingFetchAddress.get() != 0) {
             Timer pollTimer = time.timer(5);
             client.poll(pollTimer, () -> {
                 // since a fetch might be completed by the background thread, we need this poll condition

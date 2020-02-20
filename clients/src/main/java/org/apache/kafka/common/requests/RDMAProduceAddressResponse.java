@@ -126,7 +126,7 @@ public class RDMAProduceAddressResponse extends AbstractResponse {
                 int rkey = partRespStruct.get(RKEY);
                 int immdata = partRespStruct.get(IMMDATA);
                 int length = partRespStruct.get(LENGTH);
-                responses.put(tp, new PartitionResponse(error, baseOffset, offset, address, rkey, immdata,length));
+                responses.put(tp, new PartitionResponse(error, baseOffset, offset, address, rkey, immdata, length));
             }
         }
     }
