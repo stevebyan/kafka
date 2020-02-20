@@ -177,6 +177,9 @@
       <allow pkg="org.apache.kafka.clients.consumer" />
       <allow pkg="org.apache.kafka.clients.producer" />
       <allow class="sun.nio.ch.DirectBuffer" />
+      <subpackage name="internals">
+        <allow class="sun.nio.ch.DirectBuffer" />
+      </subpackage>
     </subpackage>
 
     <subpackage name="admin">
