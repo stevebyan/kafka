@@ -739,26 +739,14 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 
             NetworkClient netClient = new NetworkClient(
                     new Selector(config.getLong(ConsumerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG), metrics, time, metricGrpPrefix, channelBuilder, logContext),
-                    this.metadata,
-                    clientId,
-                    100, // a fixed large enough value will suffice for max in-flight requests
-                    config.getLong(ConsumerConfig.RECONNECT_BACKOFF_MS_CONFIG),
-                    config.getLong(ConsumerConfig.RECONNECT_BACKOFF_MAX_MS_CONFIG),
-                    config.getInt(ConsumerConfig.SEND_BUFFER_CONFIG),
-                    config.getInt(ConsumerConfig.RECEIVE_BUFFER_CONFIG),
+                    this.metadata, clientId, 100, // a fixed large enough value will suffice for max in-flight requests
+                    config.getLong(ConsumerConfig.RECONNECT_BACKOFF_MS_CONFIG), config.getLong(ConsumerConfig.RECONNECT_BACKOFF_MAX_MS_CONFIG),
+                    config.getInt(ConsumerConfig.SEND_BUFFER_CONFIG), config.getInt(ConsumerConfig.RECEIVE_BUFFER_CONFIG),
                     config.getInt(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG),
                     ClientDnsLookup.forConfig(config.getString(ConsumerConfig.CLIENT_DNS_LOOKUP_CONFIG)),
-                    time,
-                    true,
-                    new ApiVersions(),
-                    throttleTimeSensor,
-                    logContext);
+                    time, true, new ApiVersions(), throttleTimeSensor, logContext);
             this.client = new ConsumerNetworkClient(
-                    logContext,
-                    netClient,
-                    metadata,
-                    time,
-                    retryBackoffMs,
+                    logContext, netClient, metadata, time, retryBackoffMs,
                     config.getInt(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG),
                     heartbeatIntervalMs); //Will avoid blocking an extended period of time to prevent heartbeat thread starvation
             OffsetResetStrategy offsetResetStrategy = OffsetResetStrategy.valueOf(config.getString(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG).toUpperCase(Locale.ROOT));
@@ -771,20 +759,10 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             int sessionTimeoutMs = config.getInt(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG);
             // no coordinator will be constructed for the default (null) group id
             this.coordinator = groupId == null ? null :
-                new ConsumerCoordinator(logContext,
-                        this.client,
-                        groupId,
-                        maxPollIntervalMs,
-                        sessionTimeoutMs,
+                new ConsumerCoordinator(logContext, this.client, groupId, maxPollIntervalMs, sessionTimeoutMs,
                         new Heartbeat(time, sessionTimeoutMs, heartbeatIntervalMs, maxPollIntervalMs, retryBackoffMs),
-                        assignors,
-                        this.metadata,
-                        this.subscriptions,
-                        metrics,
-                        metricGrpPrefix,
-                        this.time,
-                        retryBackoffMs,
-                        enableAutoCommit,
+                        assignors, this.metadata, this.subscriptions, metrics, metricGrpPrefix, this.time,
+                        retryBackoffMs, enableAutoCommit,
                         config.getInt(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG),
                         this.interceptors,
                         config.getBoolean(ConsumerConfig.EXCLUDE_INTERNAL_TOPICS_CONFIG),
@@ -802,28 +780,18 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             boolean withSlots = config.getBoolean(ConsumerConfig.WITH_SLOTS);
             long frequencyOfRdmaUpdate = config.getLong(ConsumerConfig.SLOT_UPDATE_TIMEOUT);
             long addressUpdateTimeoutInMs = config.getLong(ConsumerConfig.TCP_TIMEOUT);
-
-
-            this.fetcher = new Fetcher<>(
-                    logContext,
-                    this.client,
+            
+            this.fetcher = new Fetcher<>( logContext, this.client,
                     config.getInt(ConsumerConfig.FETCH_MIN_BYTES_CONFIG),
                     config.getInt(ConsumerConfig.FETCH_MAX_BYTES_CONFIG),
                     config.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG),
                     config.getInt(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG),
                     config.getInt(ConsumerConfig.MAX_POLL_RECORDS_CONFIG),
                     config.getBoolean(ConsumerConfig.CHECK_CRCS_CONFIG),
-                    this.keyDeserializer,
-                    this.valueDeserializer,
-                    this.metadata,
-                    this.subscriptions,
-                    metrics,
-                    metricsRegistry.fetcherMetrics,
-                    this.time,
-                    this.retryBackoffMs,
-                    this.requestTimeoutMs,
-                    isolationLevel,
-                    this.rdmaClient, cacheSize, wrapAroundLimit, withSlots, frequencyOfRdmaUpdate, addressUpdateTimeoutInMs
+                    this.keyDeserializer, this.valueDeserializer, this.metadata, this.subscriptions,
+                    metrics, metricsRegistry.fetcherMetrics, this.time, this.retryBackoffMs, this.requestTimeoutMs,
+                    isolationLevel, this.rdmaClient, cacheSize, wrapAroundLimit, withSlots, frequencyOfRdmaUpdate,
+                    addressUpdateTimeoutInMs
                     );
 
             config.logUnused();
