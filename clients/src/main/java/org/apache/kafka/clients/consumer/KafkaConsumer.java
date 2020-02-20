@@ -781,7 +781,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             long frequencyOfRdmaUpdate = config.getLong(ConsumerConfig.SLOT_UPDATE_TIMEOUT);
             long addressUpdateTimeoutInMs = config.getLong(ConsumerConfig.TCP_TIMEOUT);
             
-            this.fetcher = new Fetcher<>( logContext, this.client,
+            this.fetcher = new Fetcher<>(logContext, this.client,
                     config.getInt(ConsumerConfig.FETCH_MIN_BYTES_CONFIG),
                     config.getInt(ConsumerConfig.FETCH_MAX_BYTES_CONFIG),
                     config.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG),
