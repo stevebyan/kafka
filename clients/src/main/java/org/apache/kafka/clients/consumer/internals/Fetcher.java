@@ -672,8 +672,8 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                     log.trace("Send address request to Node {}", node);
 
                     FetchRdmaSessionHandler handler = rdmaSessionHandlers.computeIfAbsent(node.id(),
-                            t -> new FetchRdmaSessionHandler(logContext, node.id(), rdmaClient, fetchSize,
-                                    cacheSize, wrapAroundLimit, withSlots, frequencyOfRdmaUpdate, addressUpdateTimeoutInMs));
+                        t -> new FetchRdmaSessionHandler(logContext, node.id(), rdmaClient, fetchSize,
+                            cacheSize, wrapAroundLimit, withSlots, frequencyOfRdmaUpdate, addressUpdateTimeoutInMs));
 
                     if (handler.requiresUpdatePartition(partition, isolationLevel, nowNanos)) {
                         long position = this.subscriptions.position(partition);
