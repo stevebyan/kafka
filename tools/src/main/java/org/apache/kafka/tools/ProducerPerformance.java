@@ -16,6 +16,9 @@
  */
 package org.apache.kafka.tools;
 
+import static net.sourceforge.argparse4j.impl.Arguments.store;
+import static net.sourceforge.argparse4j.impl.Arguments.storeTrue;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,8 +42,6 @@ import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Utils;
-
-import static net.sourceforge.argparse4j.impl.Arguments.*;
 
 public class ProducerPerformance {
 
@@ -141,7 +142,7 @@ public class ProducerPerformance {
                 long sendStartMs = System.currentTimeMillis();
                 Callback cb = stats.nextCompletion(sendStartMs, System.nanoTime(), payload.length, stats);
 
-                if(withRdma)
+                if (withRdma)
                     producer.RDMAsend(record, cb); // RDMAsend
                 else
                     producer.send(record, cb);
@@ -398,10 +399,10 @@ public class ProducerPerformance {
                               mbPerSec,
                               totalLatency / (double) count,
                               (double) maxLatency,
-                              percs[0]/1000.0,
-                              percs[1]/1000.0,
-                              percs[2]/1000.0,
-                              percs[3]/1000.0);
+                              percs[0] / 1000.0,
+                              percs[1] / 1000.0,
+                              percs[2] / 1000.0,
+                              percs[3] / 1000.0);
         }
 
         private static int[] percentiles(int[] latencies, int count, double... percentiles) {
@@ -436,7 +437,7 @@ public class ProducerPerformance {
             long now = System.currentTimeMillis();
             int latency = (int) (now - start);
             int latencyNano = (int) (nowNano - startNano);
-            this.stats.record(iteration, latency,latencyNano, bytes, now);
+            this.stats.record(iteration, latency, latencyNano, bytes, now);
             if (exception != null)
                 exception.printStackTrace();
         }
