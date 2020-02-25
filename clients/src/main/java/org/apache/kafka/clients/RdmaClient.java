@@ -165,7 +165,6 @@ public abstract class RdmaClient  {
         if (this.pd == null) {
             throw new IOException("VerbsClient::pd null");
         }
-        System.out.println("memreg is called");
         int access = IbvMr.IBV_ACCESS_REMOTE_READ | IbvMr.IBV_ACCESS_LOCAL_WRITE | IbvMr.IBV_ACCESS_REMOTE_WRITE;
         IbvMr mr = pd.regMr(buffer, access).execute().free().getMr();
         return mr;
